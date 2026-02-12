@@ -1,0 +1,406 @@
+// Prisma schema for PSGMX Arena
+// Full quiz platform: users, quizzes, questions, sessions, analytics
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+enum QuizMode {
+  LIVE
+  SELF_PACED
+}
+
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  MCQ
+  MULTI_SELECT
+  FILL_BLANK
+  DRAG_DROP
+  MATCH_FOLLOWING
+  NUMERIC
+  CODE
+  DRAWING
+  CASE_BASED
+  RAPID_FIRE
+  TRUE_FALSE
+  SHORT_ANSWER
+  LONG_ANSWER
+  ORDERING
+  HOTSPOT
+  MATRIX
+  SLIDER
+  FILE_UPLOAD
+}
+
+enum SessionState {
+  WAITING
+  QUESTION_ACTIVE
+  LOCKED
+  RESULTS
+  COMPLETED
+}
+
+enum PowerUpType {
+  SECOND_CHANCE
+  TIME_FREEZE
+  FIFTY_FIFTY
+  HINT
+}
+
+// ─── USER & AUTH ─────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  role          Role      @default(STUDENT)
+  avatarSvg     String?   // SVG avatar data
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      AuthSession[]
+
+  // Instructor relations
+  quizzes       Quiz[]           @relation("InstructorQuizzes")
+
+  // Student relations
+  participants  SessionParticipant[]
+  answers       StudentAnswer[]
+  powerUps      StudentPowerUp[]
+  reports       AbuseReport[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model AuthSession {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("auth_sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── QUIZ ────────────────────────────────────────────────
+
+model Quiz {
+  id            String     @id @default(cuid())
+  title         String
+  description   String?    @db.Text
+  mode          QuizMode   @default(LIVE)
+  status        QuizStatus @default(DRAFT)
+  
+  // Settings
+  timePerQuestion  Int      @default(30)    // seconds
+  maxAttempts      Int      @default(1)
+  shuffleQuestions Boolean  @default(false)
+  shuffleOptions   Boolean  @default(false)
+  showResults      Boolean  @default(true)
+  enableCodeQuestions Boolean @default(false)
+  passingScore     Float    @default(50.0)  // percentage
+  
+  // Gamification
+  enableLeaderboard Boolean @default(true)
+  enablePowerUps    Boolean @default(false)
+
+  instructorId  String
+  instructor    User       @relation("InstructorQuizzes", fields: [instructorId], references: [id])
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  questions     Question[]
+  sessions      QuizSession[]
+  tags          QuizTag[]
+
+  @@index([instructorId])
+  @@index([status])
+  @@map("quizzes")
+}
+
+model QuizTag {
+  id     String @id @default(cuid())
+  name   String
+  quizId String
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_tags")
+}
+
+// ─── QUESTIONS ───────────────────────────────────────────
+
+model Question {
+  id            String       @id @default(cuid())
+  quizId        String
+  quiz          Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  type          QuestionType
+  order         Int          @default(0)
+  
+  // Content
+  title         String       @db.Text
+  description   String?      @db.Text
+  mediaUrl      String?      // image, video, etc.
+  
+  // Points & timing
+  points        Int          @default(10)
+  timeLimit     Int?         // override quiz default (seconds)
+  
+  // Type-specific data stored as structured JSON
+  // MCQ/Multi: { options: [{id, text, isCorrect}] }
+  // Fill blank: { blanks: [{id, answer, acceptedAnswers}] }
+  // Match: { pairs: [{left, right}] }
+  // Code: { language, starterCode, testCases, hiddenTestCases }
+  // Numeric: { answer, tolerance }
+  // Drag/Drop: { items, zones }
+  // Ordering: { correctOrder: [] }
+  optionsData   Json?
+  
+  // Correct answer(s) for simple types
+  correctAnswer String?      @db.Text
+  
+  // Explanation shown after answer
+  explanation   String?      @db.Text
+  
+  // Partial scoring
+  allowPartial  Boolean      @default(false)
+  
+  // For case-based questions
+  parentId      String?
+  parent        Question?    @relation("SubQuestions", fields: [parentId], references: [id])
+  subQuestions  Question[]   @relation("SubQuestions")
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  answers       StudentAnswer[]
+  sessionQuestions SessionQuestion[]
+
+  @@index([quizId, order])
+  @@map("questions")
+}
+
+// ─── LIVE SESSION ────────────────────────────────────────
+
+model QuizSession {
+  id            String       @id @default(cuid())
+  quizId        String
+  quiz          Quiz         @relation(fields: [quizId], references: [id])
+  
+  // Join code (6-char alphanumeric)
+  joinCode      String       @unique
+  
+  // State machine
+  state         SessionState @default(WAITING)
+  currentQuestionIndex Int   @default(0)
+  
+  // Timing
+  questionStartedAt DateTime?
+  
+  // Settings overrides
+  allowLateJoin Boolean      @default(true)
+  guestMode     Boolean      @default(true)
+  
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime     @default(now())
+
+  participants  SessionParticipant[]
+  questions     SessionQuestion[]
+
+  @@index([joinCode])
+  @@index([state])
+  @@map("quiz_sessions")
+}
+
+model SessionQuestion {
+  id            String      @id @default(cuid())
+  sessionId     String
+  session       QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      Question    @relation(fields: [questionId], references: [id])
+  
+  order         Int
+  startedAt     DateTime?
+  lockedAt      DateTime?
+  
+  // Stats computed after lock
+  totalAnswers  Int         @default(0)
+  correctCount  Int         @default(0)
+  avgTimeMs     Int         @default(0)
+
+  @@unique([sessionId, questionId])
+  @@map("session_questions")
+}
+
+model SessionParticipant {
+  id            String      @id @default(cuid())
+  sessionId     String
+  session       QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?       @relation(fields: [userId], references: [id])
+  
+  // Guest support
+  guestName     String?
+  guestId       String?     // nanoid for anonymous tracking
+  
+  // Scoring
+  totalScore    Int         @default(0)
+  correctCount  Int         @default(0)
+  streak        Int         @default(0)
+  rank          Int?
+  
+  isConnected   Boolean     @default(true)
+  joinedAt      DateTime    @default(now())
+
+  answers       StudentAnswer[]
+  powerUps      StudentPowerUp[]
+
+  @@unique([sessionId, userId])
+  @@unique([sessionId, guestId])
+  @@index([sessionId, totalScore(sort: Desc)])
+  @@map("session_participants")
+}
+
+// ─── ANSWERS ─────────────────────────────────────────────
+
+model StudentAnswer {
+  id              String             @id @default(cuid())
+  participantId   String
+  participant     SessionParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question           @relation(fields: [questionId], references: [id])
+  userId          String?
+  user            User?              @relation(fields: [userId], references: [id])
+  
+  // Answer data (flexible JSON for all question types)
+  answerData      Json
+  
+  // Grading
+  isCorrect       Boolean?
+  score           Int                @default(0)
+  partialScore    Float?             // for partial credit
+  
+  // Timing
+  timeTakenMs     Int                @default(0)
+  
+  // Code execution results
+  codeOutput      String?            @db.Text
+  testResults     Json?              // { passed: number, failed: number, details: [] }
+  
+  submittedAt     DateTime           @default(now())
+
+  @@unique([participantId, questionId])
+  @@index([questionId])
+  @@map("student_answers")
+}
+
+// ─── GAMIFICATION ────────────────────────────────────────
+
+model StudentPowerUp {
+  id              String             @id @default(cuid())
+  participantId   String
+  participant     SessionParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?              @relation(fields: [userId], references: [id])
+  
+  type            PowerUpType
+  usedAt          DateTime?
+  questionIndex   Int?               // which question it was used on
+
+  @@map("student_powerups")
+}
+
+// ─── ANALYTICS ───────────────────────────────────────────
+
+model QuizAnalytics {
+  id              String   @id @default(cuid())
+  sessionId       String   @unique
+  
+  totalParticipants Int    @default(0)
+  avgScore          Float  @default(0)
+  medianScore       Float  @default(0)
+  completionRate    Float  @default(0)
+  avgTimePerQuestion Float @default(0)
+  
+  // Per-question difficulty
+  questionStats     Json?  // [{ questionId, accuracy, avgTime, distribution }]
+  
+  // Score distribution
+  scoreDistribution Json?  // { ranges: [{min, max, count}] }
+  
+  computedAt        DateTime @default(now())
+
+  @@map("quiz_analytics")
+}
+
+// ─── ADMIN ───────────────────────────────────────────────
+
+model AbuseReport {
+  id          String   @id @default(cuid())
+  reporterId  String
+  reporter    User     @relation(fields: [reporterId], references: [id])
+  
+  targetType  String   // "quiz", "user", "session"
+  targetId    String
+  reason      String   @db.Text
+  status      String   @default("pending") // pending, reviewed, resolved
+  
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  @@map("abuse_reports")
+}
