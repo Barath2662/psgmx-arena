@@ -47,3 +47,44 @@ session/[id] route	Typed q in .map callback
 join route	Changed customAlphabet to nanoid import
 quiz editor	Widened optionsData type to include tolerance, language, starterCode
 Prisma	Ran npx prisma generate to generate client types
+
+
+
+
+
+Manual Steps Required
+Add SUPABASE_SERVICE_ROLE_KEY to your .env — Find it in your Supabase project dashboard under Settings → API → service_role key (secret).
+
+Run the Prisma migration to apply schema changes:
+
+Edited
+.env.example+1-0
+or if you use migrations:
+npx prisma migrate dev --name add-password-reset
+
+Restart VS Code's TypeScript server — Press Ctrl+Shift+P → "TypeScript: Restart TS Server" to clear any stale VS Code errors.
+
+Create the initial admin user in Supabase manually (or via seed). Since users are created by admin, you need at least one admin user in Supabase Auth with password Psgmx123 whose email matches your DB admin user.
+
+
+
+# Environment variables
+# Copy this file to .env and fill in the values
+
+# Database (Supabase PostgreSQL)
+DATABASE_URL="postgresql://postgres:Barath2662%23@db.suuyfrntiewmckobryuo.supabase.co:5432/postgres"
+
+# Supabase Auth
+NEXT_PUBLIC_SUPABASE_URL="https://suuyfrntiewmckobryuo.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1dXlmcm50aWV3bWNrb2JyeXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5Njc0NTUsImV4cCI6MjA4NjU0MzQ1NX0.2cMjqYKKMYfegFpw-AUp5SnDzATQlBtDxFlIhAd6i7o"
+SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1dXlmcm50aWV3bWNrb2JyeXVvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDk2NzQ1NSwiZXhwIjoyMDg2NTQzNDU1fQ.W_0W3kKannONIKAB43LHQ6o43VDaGlXrrCCXmoxn0xQ"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# Code Execution (Piston API)
+PISTON_API_URL="https://emkc.org/api/v2/piston"
+
+# App
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+NEXT_PUBLIC_WS_URL="http://localhost:3001"
