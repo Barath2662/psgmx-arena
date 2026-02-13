@@ -1,61 +1,59 @@
-import { withAuth } from 'next-auth/middleware';
-import { NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import { NextResponse, type NextRequest } from 'next/server';
 
-export default withAuth(
-  function middleware(req) {
-    const { pathname } = req.nextUrl;
-    const token = req.nextauth.token;
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
-    // Admin-only routes
-    if (pathname.startsWith('/dashboard/analytics') || pathname.startsWith('/api/admin')) {
-      if (token?.role !== 'ADMIN') {
-        return NextResponse.redirect(new URL('/dashboard', req.url));
-      }
-    }
-
-    // Instructor+ routes (quiz creation, session hosting)
-    if (
-      pathname.startsWith('/dashboard/quizzes/new') ||
-      pathname.startsWith('/session') && pathname.includes('/host')
-    ) {
-      if (token?.role === 'STUDENT') {
-        return NextResponse.redirect(new URL('/dashboard', req.url));
-      }
-    }
-
+  // Public routes — skip auth check
+  if (
+    pathname === '/' ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/join') ||
+    pathname.startsWith('/api/auth')
+  ) {
     return NextResponse.next();
-  },
-  {
-    callbacks: {
-      authorized: ({ token, req }) => {
-        const { pathname } = req.nextUrl;
-
-        // Public routes - always allowed
-        if (
-          pathname === '/' ||
-          pathname.startsWith('/auth') ||
-          pathname.startsWith('/join') ||
-          pathname.startsWith('/api/auth') ||
-          pathname.startsWith('/api/session/join')
-        ) {
-          return true;
-        }
-
-        // API routes require auth
-        if (pathname.startsWith('/api')) {
-          return !!token;
-        }
-
-        // Dashboard and play routes require auth
-        if (pathname.startsWith('/dashboard') || pathname.startsWith('/play') || pathname.startsWith('/session')) {
-          return !!token;
-        }
-
-        return true;
-      },
-    },
   }
-);
+
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          response = NextResponse.next({
+            request: { headers: request.headers },
+          });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Not authenticated → redirect to login
+  if (!user) {
+    const loginUrl = new URL('/auth/login', request.url);
+    loginUrl.searchParams.set('next', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return response;
+}
 
 export const config = {
   matcher: [

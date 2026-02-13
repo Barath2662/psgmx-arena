@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser, isAdminRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 // GET /api/admin/analytics - Global analytics
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user || session.user.role !== 'ADMIN') {
+    const user = await getAuthUser();
+    if (!user || !isAdminRole(user.role)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const [
       totalUsers,
-      totalInstructors,
+      totalCoordinators,
       totalStudents,
       totalQuizzes,
       totalSessions,
@@ -21,7 +20,7 @@ export async function GET(req: NextRequest) {
       recentSessions,
     ] = await Promise.all([
       prisma.user.count(),
-      prisma.user.count({ where: { role: 'INSTRUCTOR' } }),
+      prisma.user.count({ where: { role: 'PLACEMENT_COORDINATOR' } }),
       prisma.user.count({ where: { role: 'STUDENT' } }),
       prisma.quiz.count(),
       prisma.quizSession.count(),
@@ -39,7 +38,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       stats: {
         totalUsers,
-        totalInstructors,
+        totalCoordinators,
         totalStudents,
         totalQuizzes,
         totalSessions,

@@ -10,6 +10,9 @@ import {
   Shield,
   ArrowRight,
   Github,
+  Mail,
+  Star,
+  Maximize,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -20,17 +23,26 @@ export default function HomePage() {
         <div className="container flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
             <Zap className="h-8 w-8 text-primary" />
-            <span className="text-xl font-bold">PSGMX Arena</span>
+            <span className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+              PSGMX Arena
+            </span>
           </Link>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
+            <a
+              href="https://github.com/psgmx-arena/psgmx-arena"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="ghost" size="sm" className="gap-2">
+                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                Star
+              </Button>
+            </a>
             <Link href="/join">
               <Button variant="ghost">Join Quiz</Button>
             </Link>
             <Link href="/auth/login">
-              <Button variant="outline">Login</Button>
-            </Link>
-            <Link href="/auth/register">
-              <Button variant="arena">Get Started</Button>
+              <Button variant="arena">Sign In</Button>
             </Link>
           </div>
         </div>
@@ -47,13 +59,13 @@ export default function HomePage() {
             <span className="text-arena-200">Zero Lag.</span>
           </h1>
           <p className="mx-auto max-w-2xl text-lg text-arena-200 mb-8">
-            Create live quizzes and coding sessions, students join instantly, everyone moves
-            question-by-question in sync, results update in real time. Fully open-source.
+            Create live quizzes and coding sessions. Students join instantly, everyone moves
+            question-by-question in sync, results update in real time. Fullscreen-enforced for exam integrity.
           </p>
           <div className="flex items-center justify-center gap-4">
-            <Link href="/auth/register">
+            <Link href="/auth/login">
               <Button size="xl" className="bg-white text-arena-900 hover:bg-arena-100">
-                Start Teaching <ArrowRight className="ml-2 h-5 w-5" />
+                Get Started <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
             <Link href="/join">
@@ -73,7 +85,7 @@ export default function HomePage() {
             <FeatureCard
               icon={<Zap className="h-8 w-8" />}
               title="Real-Time Sync"
-              description="WebSocket-powered live sessions. No polling, no lag. Instructor controls the flow, students follow in lockstep."
+              description="WebSocket-powered live sessions. No polling, no lag. Coordinator controls the flow, students follow in lockstep."
             />
             <FeatureCard
               icon={<Code2 className="h-8 w-8" />}
@@ -86,9 +98,9 @@ export default function HomePage() {
               description="Real-time accuracy tracking, time analysis, score distribution. Export as CSV or PDF."
             />
             <FeatureCard
-              icon={<Users className="h-8 w-8" />}
-              title="150+ Concurrent Users"
-              description="Optimized broadcast architecture. Single event per action, Redis-backed state, batched DB writes."
+              icon={<Maximize className="h-8 w-8" />}
+              title="Fullscreen Lock"
+              description="Enforced fullscreen during tests for exam integrity. Exit attempts are logged and flagged."
             />
             <FeatureCard
               icon={<Trophy className="h-8 w-8" />}
@@ -109,8 +121,8 @@ export default function HomePage() {
         <div className="container">
           <h2 className="text-3xl font-bold text-center mb-12">How It Works</h2>
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            <StepCard step={1} title="Create Quiz" description="Add questions, set timers, enable code challenges. AI assist available." />
-            <StepCard step={2} title="Go Live" description="Start a session, share the 6-digit code. Students join instantly." />
+            <StepCard step={1} title="Create Quiz" description="Add questions, set timers, enable code challenges." />
+            <StepCard step={2} title="Go Live" description="Start a session, share the 6-digit code. Students join instantly in fullscreen." />
             <StepCard step={3} title="Track Results" description="Live leaderboard, real-time analytics, exportable reports." />
           </div>
         </div>
@@ -118,20 +130,23 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="border-t py-8">
-        <div className="container flex items-center justify-between">
+        <div className="container flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-2">
             <Zap className="h-5 w-5 text-primary" />
             <span className="font-semibold">PSGMX Arena</span>
           </div>
           <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-            <span>100% Open Source</span>
+            <a href="mailto:barathvikramansk@gmail.com" className="hover:text-foreground flex items-center gap-1">
+              <Mail className="h-4 w-4" /> Support
+            </a>
+            <span>|</span>
             <a
-              href="https://github.com"
+              href="https://github.com/psgmx-arena/psgmx-arena"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-foreground"
+              className="hover:text-foreground flex items-center gap-1"
             >
-              <Github className="h-5 w-5" />
+              <Github className="h-5 w-5" /> GitHub
             </a>
           </div>
         </div>

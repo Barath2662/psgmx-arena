@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser, isAdminRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { updateQuizSchema } from '@/lib/validations';
 
@@ -10,8 +9,8 @@ export async function GET(
   { params }: { params: { quizId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -34,8 +33,7 @@ export async function GET(
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
 
-    // Instructors can only see their own quizzes (admin can see all)
-    if (session.user.role === 'INSTRUCTOR' && quiz.instructorId !== session.user.id) {
+    if (!isAdminRole(user.role) && quiz.instructorId !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -52,8 +50,8 @@ export async function PATCH(
   { params }: { params: { quizId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -62,7 +60,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
 
-    if (quiz.instructorId !== session.user.id && session.user.role !== 'ADMIN') {
+    if (quiz.instructorId !== user.id && !isAdminRole(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -94,8 +92,8 @@ export async function DELETE(
   { params }: { params: { quizId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -104,7 +102,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
 
-    if (quiz.instructorId !== session.user.id && session.user.role !== 'ADMIN') {
+    if (quiz.instructorId !== user.id && !isAdminRole(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

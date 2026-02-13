@@ -2,16 +2,8 @@ import { z } from 'zod';
 
 // ─── Auth ────────────────────────────────────────────────
 
-export const loginSchema = z.object({
+export const otpEmailSchema = z.object({
   email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-export const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['INSTRUCTOR', 'STUDENT']).default('STUDENT'),
 });
 
 // ─── Quiz ────────────────────────────────────────────────
@@ -108,22 +100,10 @@ export const executeCodeSchema = z.object({
   stdin: z.string().max(10000).optional(),
 });
 
-// ─── AI Generation ───────────────────────────────────────
-
-export const aiGenerateSchema = z.object({
-  content: z.string().min(10).max(50000),
-  contentType: z.enum(['text', 'pdf_text', 'youtube_url']),
-  questionCount: z.number().min(1).max(50).default(10),
-  questionTypes: z.array(z.string()).optional(),
-  difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
-});
-
-export type LoginInput = z.infer<typeof loginSchema>;
-export type RegisterInput = z.infer<typeof registerSchema>;
+export type OtpEmailInput = z.infer<typeof otpEmailSchema>;
 export type CreateQuizInput = z.infer<typeof createQuizSchema>;
 export type CreateQuestionInput = z.infer<typeof createQuestionSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type JoinSessionInput = z.infer<typeof joinSessionSchema>;
 export type SubmitAnswerInput = z.infer<typeof submitAnswerSchema>;
 export type ExecuteCodeInput = z.infer<typeof executeCodeSchema>;
-export type AIGenerateInput = z.infer<typeof aiGenerateSchema>;

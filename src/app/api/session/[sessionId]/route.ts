@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser, canManageQuizzes } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getLeaderboard } from '@/lib/redis';
 
@@ -60,11 +59,10 @@ export async function GET(
     }
 
     // Strip correct answers for students during active session
-    const session = await getServerSession(authOptions);
-    const isInstructor =
-      session?.user?.role === 'INSTRUCTOR' || session?.user?.role === 'ADMIN';
+    const user = await getAuthUser();
+    const isManager = user ? canManageQuizzes(user.role) : false;
 
-    if (!isInstructor && quizSession.state !== 'COMPLETED') {
+    if (!isManager && quizSession.state !== 'COMPLETED') {
       quizSession.quiz.questions = quizSession.quiz.questions.map((q: any) => {
         const sanitized = { ...q, optionsData: q.optionsData as any };
         // Remove isCorrect from options

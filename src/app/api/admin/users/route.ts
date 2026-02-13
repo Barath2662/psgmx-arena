@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser, isAdminRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 // GET /api/admin/users - Admin: list all users
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user || session.user.role !== 'ADMIN') {
+    const user = await getAuthUser();
+    if (!user || !isAdminRole(user.role)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
@@ -62,8 +61,8 @@ export async function GET(req: NextRequest) {
 // PATCH /api/admin/users - Update user role
 export async function PATCH(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user || session.user.role !== 'ADMIN') {
+    const user = await getAuthUser();
+    if (!user || !isAdminRole(user.role)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
@@ -72,17 +71,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'userId and role are required' }, { status: 400 });
     }
 
-    if (!['ADMIN', 'INSTRUCTOR', 'STUDENT'].includes(role)) {
+    if (!['ADMIN', 'PLACEMENT_REP', 'PLACEMENT_COORDINATOR', 'STUDENT'].includes(role)) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
     }
 
-    const user = await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: userId },
       data: { role },
       select: { id: true, name: true, email: true, role: true },
     });
 
-    return NextResponse.json({ user });
+    return NextResponse.json({ user: updated });
   } catch (error) {
     console.error('Error updating user:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

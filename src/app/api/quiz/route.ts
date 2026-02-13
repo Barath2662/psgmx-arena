@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser, canManageQuizzes, isAdminRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { createQuizSchema } from '@/lib/validations';
 
 // GET /api/quiz - List quizzes for current user
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -19,8 +18,9 @@ export async function GET(req: NextRequest) {
 
     const where: any = {};
 
-    if (session.user.role === 'INSTRUCTOR') {
-      where.instructorId = session.user.id;
+    // Non-admin roles only see their own quizzes
+    if (!isAdminRole(user.role)) {
+      where.instructorId = user.id;
     }
 
     if (status) {
@@ -54,13 +54,13 @@ export async function GET(req: NextRequest) {
 // POST /api/quiz - Create a new quiz
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (session.user.role !== 'INSTRUCTOR' && session.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only instructors can create quizzes' }, { status: 403 });
+    if (!canManageQuizzes(user.role)) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const body = await req.json();
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     const quiz = await prisma.quiz.create({
       data: {
         ...validation.data,
-        instructorId: session.user.id,
+        instructorId: user.id,
       },
       include: {
         _count: { select: { questions: true } },

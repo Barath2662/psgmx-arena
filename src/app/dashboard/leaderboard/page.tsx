@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, Crown, Medal, Star, TrendingUp, Award } from 'lucide-react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/components/providers/auth-provider';
 
 interface SessionHistoryEntry {
   id: string;
@@ -16,7 +16,7 @@ interface SessionHistoryEntry {
 }
 
 export default function LeaderboardPage() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
 

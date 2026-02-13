@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/components/providers/auth-provider';
 import CodeSandbox from '@/components/code-sandbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,7 +65,7 @@ const CHALLENGES = [
 ];
 
 export default function CodePlaygroundPage() {
-  const { data: sessionData } = useSession();
+  const { user } = useAuth();
   const [selectedChallenge, setSelectedChallenge] = useState(CHALLENGES[0]);
   const [language, setLanguage] = useState('python');
 
@@ -82,7 +82,7 @@ export default function CodePlaygroundPage() {
             <h1 className="font-bold text-xl">Code Playground</h1>
           </div>
           <Badge variant="outline" className="text-xs">
-            {sessionData?.user?.email || 'Guest'}
+            {user?.email || 'Guest'}
           </Badge>
         </div>
       </div>

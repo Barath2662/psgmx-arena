@@ -1,5 +1,4 @@
 import { PrismaClient, Role, QuizMode, QuestionType } from '@prisma/client';
-import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -7,35 +6,42 @@ async function main() {
   console.log('🌱 Seeding database...');
 
   // Create Admin
-  const adminPassword = await bcrypt.hash('admin123', 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@psgmx.edu' },
     update: {},
     create: {
       email: 'admin@psgmx.edu',
       name: 'Platform Admin',
-      passwordHash: adminPassword,
       role: Role.ADMIN,
     },
   });
   console.log('✅ Admin created:', admin.email);
 
-  // Create Instructor
-  const instructorPassword = await bcrypt.hash('instructor123', 12);
-  const instructor = await prisma.user.upsert({
-    where: { email: 'instructor@psgmx.edu' },
+  // Create Placement Representative
+  const placementRep = await prisma.user.upsert({
+    where: { email: 'placement.rep@psgmx.edu' },
     update: {},
     create: {
-      email: 'instructor@psgmx.edu',
-      name: 'Dr. Demo Instructor',
-      passwordHash: instructorPassword,
-      role: Role.INSTRUCTOR,
+      email: 'placement.rep@psgmx.edu',
+      name: 'Placement Representative',
+      role: Role.PLACEMENT_REP,
     },
   });
-  console.log('✅ Instructor created:', instructor.email);
+  console.log('✅ Placement Rep created:', placementRep.email);
+
+  // Create Placement Coordinator
+  const coordinator = await prisma.user.upsert({
+    where: { email: 'coordinator@psgmx.edu' },
+    update: {},
+    create: {
+      email: 'coordinator@psgmx.edu',
+      name: 'Placement Coordinator',
+      role: Role.PLACEMENT_COORDINATOR,
+    },
+  });
+  console.log('✅ Coordinator created:', coordinator.email);
 
   // Create Students
-  const studentPassword = await bcrypt.hash('student123', 12);
   const students = [];
   for (let i = 1; i <= 5; i++) {
     const student = await prisma.user.upsert({
@@ -44,7 +50,6 @@ async function main() {
       create: {
         email: `student${i}@psgmx.edu`,
         name: `Student ${i}`,
-        passwordHash: studentPassword,
         role: Role.STUDENT,
       },
     });
@@ -64,7 +69,7 @@ async function main() {
       shuffleQuestions: false,
       enableLeaderboard: true,
       enableCodeQuestions: true,
-      instructorId: instructor.id,
+      instructorId: coordinator.id,
       questions: {
         create: [
           {
@@ -182,10 +187,11 @@ def reverseList(head: ListNode) -> ListNode:
   console.log('✅ Sample quiz created:', quiz.title);
 
   console.log('\n🎉 Seeding complete!');
-  console.log('\nLogin credentials:');
-  console.log('  Admin:      admin@psgmx.edu / admin123');
-  console.log('  Instructor: instructor@psgmx.edu / instructor123');
-  console.log('  Students:   student[1-5]@psgmx.edu / student123');
+  console.log('\nSeeded users (use Supabase OTP to login):');
+  console.log('  Admin:       admin@psgmx.edu');
+  console.log('  Placement:   placement.rep@psgmx.edu');
+  console.log('  Coordinator: coordinator@psgmx.edu');
+  console.log('  Students:    student[1-5]@psgmx.edu');
 }
 
 main()

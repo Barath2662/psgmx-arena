@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { joinSessionSchema } from '@/lib/validations';
 import { nanoid } from 'nanoid';
@@ -43,8 +42,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Check auth
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const user = await getAuthUser();
+    const userId = user?.id;
 
     // Guest or authenticated join
     if (!userId && !quizSession.guestMode) {
@@ -94,7 +93,7 @@ export async function POST(req: NextRequest) {
       participant: {
         id: participant.id,
         guestId: (participant as any).guestId,
-        name: (participant as any).guestName || session?.user?.name,
+        name: (participant as any).guestName || user?.name,
       },
     });
   } catch (error) {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser, isAdminRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { createQuestionSchema } from '@/lib/validations';
 
@@ -10,8 +9,8 @@ export async function GET(
   { params }: { params: { quizId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -36,8 +35,8 @@ export async function POST(
   { params }: { params: { quizId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -46,7 +45,7 @@ export async function POST(
     if (!quiz) {
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
-    if (quiz.instructorId !== session.user.id && session.user.role !== 'ADMIN') {
+    if (quiz.instructorId !== user.id && !isAdminRole(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -88,13 +87,13 @@ export async function PUT(
   { params }: { params: { quizId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getAuthUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const quiz = await prisma.quiz.findUnique({ where: { id: params.quizId } });
-    if (!quiz || (quiz.instructorId !== session.user.id && session.user.role !== 'ADMIN')) {
+    if (!quiz || (quiz.instructorId !== user.id && !isAdminRole(user.role))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

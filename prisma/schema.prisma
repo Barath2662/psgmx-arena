@@ -14,7 +14,8 @@ datasource db {
 
 enum Role {
   ADMIN
-  INSTRUCTOR
+  PLACEMENT_REP
+  PLACEMENT_COORDINATOR
   STUDENT
 }
 
@@ -69,20 +70,17 @@ enum PowerUpType {
 
 model User {
   id            String    @id @default(cuid())
+  supabaseId    String?   @unique  // Supabase Auth UID
   name          String?
   email         String    @unique
   emailVerified DateTime?
-  passwordHash  String?
   image         String?
   role          Role      @default(STUDENT)
   avatarSvg     String?   // SVG avatar data
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      AuthSession[]
-
-  // Instructor relations
+  // Admin / Placement Rep / Coordinator relations
   quizzes       Quiz[]           @relation("InstructorQuizzes")
 
   // Student relations
@@ -92,46 +90,6 @@ model User {
   reports       AbuseReport[]
 
   @@map("users")
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@map("accounts")
-}
-
-model AuthSession {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("auth_sessions")
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-  @@map("verification_tokens")
 }
 
 // ─── QUIZ ────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useSocket } from '@/components/providers/socket-provider';
+import { FullscreenGuard } from '@/components/fullscreen-guard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -162,6 +163,7 @@ export default function PlaySessionPage() {
   const currentQuestion = questions[currentIndex];
 
   return (
+    <FullscreenGuard active={state === 'QUESTION_ACTIVE' || state === 'LOCKED' || state === 'RESULTS'}>
     <div className="min-h-screen bg-background">
       {/* Top bar */}
       <div className="border-b bg-card sticky top-0 z-50">
@@ -395,6 +397,7 @@ export default function PlaySessionPage() {
         )}
       </div>
     </div>
+    </FullscreenGuard>
   );
 }
 
