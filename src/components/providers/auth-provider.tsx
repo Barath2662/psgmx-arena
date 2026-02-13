@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase-browser';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
@@ -10,6 +11,7 @@ interface AuthUser {
   name: string | null;
   role: string;
   supabaseId: string;
+  mustChangePassword: boolean;
 }
 
 interface AuthContextType {
@@ -33,6 +35,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const router = useRouter();
+  const pathname = usePathname();
 
   async function fetchUser() {
     try {
@@ -44,6 +48,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
+
+          // Redirect to change-password if needed (and not already there)
+          if (
+            data.user?.mustChangePassword &&
+            pathname !== '/auth/change-password'
+          ) {
+            router.push('/auth/change-password');
+          }
         } else {
           setUser(null);
         }

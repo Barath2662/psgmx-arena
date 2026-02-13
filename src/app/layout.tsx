@@ -11,8 +11,8 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'PSGMX Arena - Live Quiz & Coding Platform',
   description:
-    'Real-time quiz and coding arena for placement coordinators and students. Create live quizzes, coding challenges, and track performance in real-time.',
-  keywords: ['quiz', 'coding', 'arena', 'education', 'real-time', 'live', 'placement'],
+    'Real-time quiz and coding arena for instructors and students. Create live quizzes, coding challenges, and track performance in real-time.',
+  keywords: ['quiz', 'coding', 'arena', 'education', 'real-time', 'live', 'assessment'],
 };
 
 export default function RootLayout({

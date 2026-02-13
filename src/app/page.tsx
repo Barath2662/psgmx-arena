@@ -85,7 +85,7 @@ export default function HomePage() {
             <FeatureCard
               icon={<Zap className="h-8 w-8" />}
               title="Real-Time Sync"
-              description="WebSocket-powered live sessions. No polling, no lag. Coordinator controls the flow, students follow in lockstep."
+              description="WebSocket-powered live sessions. No polling, no lag. Instructors control the flow, students follow in lockstep."
             />
             <FeatureCard
               icon={<Code2 className="h-8 w-8" />}

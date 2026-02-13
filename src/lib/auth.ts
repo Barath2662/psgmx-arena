@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase-server';
 import { prisma } from '@/lib/prisma';
 
-export type UserRole = 'ADMIN' | 'PLACEMENT_REP' | 'PLACEMENT_COORDINATOR' | 'STUDENT';
+export type UserRole = 'ADMIN' | 'INSTRUCTOR' | 'STUDENT';
 
 export interface AuthUser {
   id: string;
@@ -9,6 +9,7 @@ export interface AuthUser {
   name: string | null;
   role: UserRole;
   supabaseId: string;
+  mustChangePassword: boolean;
 }
 
 /**
@@ -36,6 +37,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
           supabaseId: supabaseUser.id,
           name: supabaseUser.user_metadata?.name || supabaseUser.email.split('@')[0],
           role: 'STUDENT',
+          mustChangePassword: true,
         },
       });
     } else if (!user.supabaseId) {
@@ -51,6 +53,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       name: user.name,
       role: user.role as UserRole,
       supabaseId: user.supabaseId || supabaseUser.id,
+      mustChangePassword: user.mustChangePassword,
     };
   } catch {
     return null;
@@ -58,16 +61,16 @@ export async function getAuthUser(): Promise<AuthUser | null> {
 }
 
 /**
- * Check if a role has admin-level access (ADMIN or PLACEMENT_REP)
+ * Check if a role has admin-level access
  */
 export function isAdminRole(role: UserRole): boolean {
-  return role === 'ADMIN' || role === 'PLACEMENT_REP';
+  return role === 'ADMIN';
 }
 
 /**
- * Check if a role can manage quizzes (all except STUDENT)
+ * Check if a role can manage quizzes (ADMIN or INSTRUCTOR)
  */
 export function canManageQuizzes(role: UserRole): boolean {
-  return role !== 'STUDENT';
+  return role === 'ADMIN' || role === 'INSTRUCTOR';
 }
 

@@ -3,190 +3,302 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Crown, Medal, Star, TrendingUp, Award } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Trophy, Crown, Medal, Star, TrendingUp, Award, Calendar, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 
-interface SessionHistoryEntry {
-  id: string;
-  quizTitle: string;
-  score: number;
+type TabType = 'overall' | 'weekly' | 'session';
+
+interface LeaderboardEntry {
   rank: number;
-  totalParticipants: number;
-  date: string;
+  userId: string | null;
+  name: string;
+  email?: string | null;
+  totalScore?: number;
+  score?: number;
+  avgScore?: number;
+  quizzesTaken?: number;
+  correctCount?: number;
+  bestStreak?: number;
+  streak?: number;
+}
+
+interface SessionOption {
+  id: string;
+  title: string;
+  joinCode: string;
+  state: string;
 }
 
 export default function LeaderboardPage() {
   const { user } = useAuth();
-  const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
+  const [tab, setTab] = useState<TabType>('overall');
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sessions, setSessions] = useState<SessionOption[]>([]);
+  const [selectedSession, setSelectedSession] = useState<string>('');
+  const [periodInfo, setPeriodInfo] = useState<string>('');
 
+  // Fetch sessions for per-test selector
   useEffect(() => {
-    // In a real app, fetch from API
-    setHistory([
-      {
-        id: '1',
-        quizTitle: 'Data Structures Midterm',
-        score: 850,
-        rank: 2,
-        totalParticipants: 45,
-        date: '2024-01-15',
-      },
-      {
-        id: '2',
-        quizTitle: 'Algorithms Week 3',
-        score: 920,
-        rank: 1,
-        totalParticipants: 38,
-        date: '2024-01-12',
-      },
-      {
-        id: '3',
-        quizTitle: 'OOP Concepts',
-        score: 760,
-        rank: 5,
-        totalParticipants: 52,
-        date: '2024-01-08',
-      },
-    ]);
-    setLoading(false);
+    fetch('/api/session?state=COMPLETED')
+      .then((r) => r.json())
+      .then((data) => {
+        const opts = (data.sessions || []).map((s: any) => ({
+          id: s.id,
+          title: s.quiz?.title || s.joinCode,
+          joinCode: s.joinCode,
+          state: s.state,
+        }));
+        setSessions(opts);
+      })
+      .catch(console.error);
   }, []);
 
-  const totalScore = history.reduce((sum, h) => sum + h.score, 0);
-  const avgRank =
-    history.length > 0
-      ? (history.reduce((sum, h) => sum + h.rank, 0) / history.length).toFixed(1)
-      : '-';
-  const wins = history.filter((h) => h.rank === 1).length;
+  // Fetch leaderboard data when tab or selected session changes
+  useEffect(() => {
+    setLoading(true);
+    let url = '/api/leaderboard?type=' + tab;
+    if (tab === 'session' && selectedSession) {
+      url += '&id=' + selectedSession;
+    } else if (tab === 'session' && !selectedSession) {
+      setLeaderboard([]);
+      setLoading(false);
+      return;
+    }
+
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        setLeaderboard(data.leaderboard || []);
+        if (data.periodStart) {
+          setPeriodInfo(
+            `${new Date(data.periodStart).toLocaleDateString()} – ${new Date(data.periodEnd).toLocaleDateString()}`
+          );
+        } else {
+          setPeriodInfo('');
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [tab, selectedSession]);
+
+  // Find current user's position
+  const myEntry = leaderboard.find((e) => e.userId === user?.id);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Leaderboard & Achievements</h1>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Trophy className="h-6 w-6 text-yellow-500" /> Leaderboard
+          </h1>
+          {periodInfo && (
+            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
+              <Calendar className="h-3 w-3" /> {periodInfo}
+            </p>
+          )}
+        </div>
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-yellow-500/10">
-              <Trophy className="h-6 w-6 text-yellow-500" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{totalScore}</p>
-              <p className="text-xs text-muted-foreground">Total Score</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/10">
-              <TrendingUp className="h-6 w-6 text-blue-500" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{avgRank}</p>
-              <p className="text-xs text-muted-foreground">Avg Rank</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-green-500/10">
-              <Crown className="h-6 w-6 text-green-500" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{wins}</p>
-              <p className="text-xs text-muted-foreground">1st Place Wins</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-500/10">
-              <Award className="h-6 w-6 text-purple-500" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{history.length}</p>
-              <p className="text-xs text-muted-foreground">Quizzes Taken</p>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Tab buttons */}
+        <div className="flex gap-1 bg-muted rounded-lg p-1">
+          {([
+            { key: 'overall' as const, label: 'All Time' },
+            { key: 'weekly' as const, label: 'This Week' },
+            { key: 'session' as const, label: 'Per Test' },
+          ]).map((t) => (
+            <Button
+              key={t.key}
+              size="sm"
+              variant={tab === t.key ? 'default' : 'ghost'}
+              onClick={() => setTab(t.key)}
+              className="text-xs"
+            >
+              {t.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      {/* Achievements */}
+      {/* Session selector for per-test tab */}
+      {tab === 'session' && (
+        <Card>
+          <CardContent className="pt-4">
+            <label className="text-sm font-medium mb-2 block">Select a test</label>
+            <select
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={selectedSession}
+              onChange={(e) => setSelectedSession(e.target.value)}
+            >
+              <option value="">Choose a completed test...</option>
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title} ({s.joinCode})
+                </option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* My rank banner */}
+      {myEntry && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="text-2xl font-bold">
+                {myEntry.rank === 1 ? '🥇' : myEntry.rank === 2 ? '🥈' : myEntry.rank === 3 ? '🥉' : `#${myEntry.rank}`}
+              </div>
+              <div>
+                <p className="font-semibold">Your Position</p>
+                <p className="text-sm text-muted-foreground">
+                  Score: {myEntry.totalScore ?? myEntry.score ?? 0}
+                  {myEntry.quizzesTaken != null && ` · ${myEntry.quizzesTaken} quizzes`}
+                </p>
+              </div>
+            </div>
+            <Badge variant="success">You</Badge>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stats summary */}
+      {!loading && leaderboard.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-yellow-500/10">
+                <Trophy className="h-6 w-6 text-yellow-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{leaderboard.length}</p>
+                <p className="text-xs text-muted-foreground">Players</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <TrendingUp className="h-6 w-6 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{leaderboard[0]?.totalScore ?? leaderboard[0]?.score ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Top Score</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-500/10">
+                <Crown className="h-6 w-6 text-green-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{leaderboard[0]?.name?.split(' ')[0] || '—'}</p>
+                <p className="text-xs text-muted-foreground">#1 Player</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/10">
+                <Award className="h-6 w-6 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {Math.round(
+                    leaderboard.reduce((s, e) => s + (e.totalScore ?? e.score ?? 0), 0) /
+                      leaderboard.length
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">Avg Score</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Leaderboard table */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-yellow-500" /> Achievements
+            <Star className="h-5 w-5 text-yellow-500" />
+            {tab === 'overall'
+              ? 'All-Time Leaderboard'
+              : tab === 'weekly'
+              ? 'Weekly Leaderboard'
+              : 'Test Leaderboard'}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {[
-              { icon: '🏆', title: 'First Win', desc: 'Win your first quiz', unlocked: wins > 0 },
-              { icon: '🔥', title: 'On Fire', desc: '5-question streak', unlocked: true },
-              { icon: '⚡', title: 'Speed Demon', desc: 'Answer in under 3s', unlocked: true },
-              { icon: '💯', title: 'Perfect Score', desc: 'Get 100% on a quiz', unlocked: false },
-              { icon: '🎯', title: 'Sharpshooter', desc: '10 correct in a row', unlocked: false },
-              { icon: '📚', title: 'Scholar', desc: 'Complete 10 quizzes', unlocked: false },
-              { icon: '🌟', title: 'Rising Star', desc: 'Top 3 finish', unlocked: history.some((h) => h.rank <= 3) },
-              { icon: '💪', title: 'Consistent', desc: '5 quizzes in a week', unlocked: false },
-            ].map((ach) => (
-              <div
-                key={ach.title}
-                className={`p-4 rounded-lg border text-center transition-all ${
-                  ach.unlocked
-                    ? 'bg-card border-primary/30'
-                    : 'bg-muted/50 opacity-50 grayscale'
-                }`}
-              >
-                <div className="text-3xl mb-2">{ach.icon}</div>
-                <p className="font-medium text-sm">{ach.title}</p>
-                <p className="text-xs text-muted-foreground mt-1">{ach.desc}</p>
-                {ach.unlocked && (
-                  <Badge variant="success" className="mt-2 text-xs">Unlocked</Badge>
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Session History */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Sessions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {history.map((h) => (
-              <div
-                key={h.id}
-                className="flex items-center justify-between p-4 rounded-lg border"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0">
-                    {h.rank === 1 ? (
-                      <Crown className="h-6 w-6 text-yellow-500" />
-                    ) : h.rank <= 3 ? (
-                      <Medal className="h-6 w-6 text-gray-400" />
-                    ) : (
-                      <span className="text-lg font-mono">#{h.rank}</span>
-                    )}
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : leaderboard.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {tab === 'session' && !selectedSession
+                ? 'Select a test above to view its leaderboard'
+                : 'No leaderboard data yet. Complete some quizzes to appear here!'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {leaderboard.map((entry) => {
+                const isMe = entry.userId === user?.id;
+                return (
+                  <div
+                    key={`${entry.rank}-${entry.userId}`}
+                    className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
+                      isMe
+                        ? 'bg-primary/10 border-primary/50 ring-1 ring-primary/20'
+                        : entry.rank <= 3
+                        ? 'bg-muted/50'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 text-center">
+                        {entry.rank === 1 ? (
+                          <Crown className="h-7 w-7 text-yellow-500 mx-auto" />
+                        ) : entry.rank === 2 ? (
+                          <Medal className="h-6 w-6 text-gray-400 mx-auto" />
+                        ) : entry.rank === 3 ? (
+                          <Medal className="h-6 w-6 text-amber-600 mx-auto" />
+                        ) : (
+                          <span className="text-lg font-mono font-bold text-muted-foreground">
+                            #{entry.rank}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-semibold flex items-center gap-2">
+                          {entry.name}
+                          {isMe && (
+                            <Badge variant="outline" className="text-[10px]">
+                              You
+                            </Badge>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {entry.quizzesTaken != null && `${entry.quizzesTaken} quizzes`}
+                          {entry.correctCount != null && ` · ${entry.correctCount} correct`}
+                          {(entry.bestStreak ?? entry.streak ?? 0) > 0 &&
+                            ` · 🔥 ${entry.bestStreak ?? entry.streak} streak`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-bold text-primary">
+                        {entry.totalScore ?? entry.score ?? 0}
+                      </p>
+                      {entry.avgScore != null && (
+                        <p className="text-xs text-muted-foreground">avg {entry.avgScore}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">{h.quizTitle}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(h.date).toLocaleDateString()} &middot; {h.totalParticipants} players
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-primary">{h.score}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Rank {h.rank}/{h.totalParticipants}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

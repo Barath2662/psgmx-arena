@@ -17,29 +17,17 @@ async function main() {
   });
   console.log('✅ Admin created:', admin.email);
 
-  // Create Placement Representative
-  const placementRep = await prisma.user.upsert({
-    where: { email: 'placement.rep@psgmx.edu' },
+  // Create Instructor
+  const instructor = await prisma.user.upsert({
+    where: { email: 'instructor@psgmx.edu' },
     update: {},
     create: {
-      email: 'placement.rep@psgmx.edu',
-      name: 'Placement Representative',
-      role: Role.PLACEMENT_REP,
+      email: 'instructor@psgmx.edu',
+      name: 'Dr. Demo Instructor',
+      role: Role.INSTRUCTOR,
     },
   });
-  console.log('✅ Placement Rep created:', placementRep.email);
-
-  // Create Placement Coordinator
-  const coordinator = await prisma.user.upsert({
-    where: { email: 'coordinator@psgmx.edu' },
-    update: {},
-    create: {
-      email: 'coordinator@psgmx.edu',
-      name: 'Placement Coordinator',
-      role: Role.PLACEMENT_COORDINATOR,
-    },
-  });
-  console.log('✅ Coordinator created:', coordinator.email);
+  console.log('✅ Instructor created:', instructor.email);
 
   // Create Students
   const students = [];
@@ -69,7 +57,7 @@ async function main() {
       shuffleQuestions: false,
       enableLeaderboard: true,
       enableCodeQuestions: true,
-      instructorId: coordinator.id,
+      instructorId: instructor.id,
       questions: {
         create: [
           {
@@ -188,10 +176,9 @@ def reverseList(head: ListNode) -> ListNode:
 
   console.log('\n🎉 Seeding complete!');
   console.log('\nSeeded users (use Supabase OTP to login):');
-  console.log('  Admin:       admin@psgmx.edu');
-  console.log('  Placement:   placement.rep@psgmx.edu');
-  console.log('  Coordinator: coordinator@psgmx.edu');
-  console.log('  Students:    student[1-5]@psgmx.edu');
+  console.log('  Admin:      admin@psgmx.edu');
+  console.log('  Instructor: instructor@psgmx.edu');
+  console.log('  Students:   student[1-5]@psgmx.edu');
 }
 
 main()

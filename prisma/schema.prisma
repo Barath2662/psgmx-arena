@@ -14,8 +14,7 @@ datasource db {
 
 enum Role {
   ADMIN
-  PLACEMENT_REP
-  PLACEMENT_COORDINATOR
+  INSTRUCTOR
   STUDENT
 }
 
@@ -69,18 +68,19 @@ enum PowerUpType {
 // ─── USER & AUTH ─────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
-  supabaseId    String?   @unique  // Supabase Auth UID
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  role          Role      @default(STUDENT)
-  avatarSvg     String?   // SVG avatar data
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  supabaseId         String?   @unique  // Supabase Auth UID
+  name               String?
+  email              String    @unique
+  emailVerified      DateTime?
+  image              String?
+  role               Role      @default(STUDENT)
+  mustChangePassword Boolean   @default(true)  // Force password change on first login
+  avatarSvg          String?   // SVG avatar data
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  // Admin / Placement Rep / Coordinator relations
+  // Admin / Instructor relations
   quizzes       Quiz[]           @relation("InstructorQuizzes")
 
   // Student relations
@@ -88,6 +88,7 @@ model User {
   answers       StudentAnswer[]
   powerUps      StudentPowerUp[]
   reports       AbuseReport[]
+  passwordResetRequests PasswordResetRequest[]
 
   @@map("users")
 }
@@ -113,6 +114,10 @@ model Quiz {
   // Gamification
   enableLeaderboard Boolean @default(true)
   enablePowerUps    Boolean @default(false)
+
+  // Scheduling – instructor sets start & end time for every test
+  scheduledStartTime DateTime?
+  scheduledEndTime   DateTime?
 
   instructorId  String
   instructor    User       @relation("InstructorQuizzes", fields: [instructorId], references: [id])
@@ -361,4 +366,18 @@ model AbuseReport {
   resolvedAt  DateTime?
 
   @@map("abuse_reports")
+}
+
+// ─── PASSWORD RESET REQUESTS ─────────────────────────────
+
+model PasswordResetRequest {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  status      String    @default("PENDING")  // PENDING, APPROVED, REJECTED
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+  resolvedBy  String?   // Admin user ID who resolved
+
+  @@map("password_reset_requests")
 }

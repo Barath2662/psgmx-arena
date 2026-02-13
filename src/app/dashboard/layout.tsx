@@ -17,6 +17,7 @@ import {
   Trophy,
   Mail,
   Star,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -30,20 +31,15 @@ const roleNavItems: Record<string, Array<{ href: string; label: string; icon: Re
     { href: '/dashboard/quizzes', label: 'All Quizzes', icon: <BookOpen className="h-4 w-4" /> },
     { href: '/dashboard/sessions', label: 'Sessions', icon: <Play className="h-4 w-4" /> },
     { href: '/dashboard/analytics', label: 'Analytics', icon: <BarChart3 className="h-4 w-4" /> },
+    { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: <Trophy className="h-4 w-4" /> },
     { href: '/dashboard/reports', label: 'Reports', icon: <Shield className="h-4 w-4" /> },
   ],
-  PLACEMENT_REP: [
-    { href: '/dashboard', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { href: '/dashboard/users', label: 'Manage Users', icon: <Users className="h-4 w-4" /> },
-    { href: '/dashboard/quizzes', label: 'All Quizzes', icon: <BookOpen className="h-4 w-4" /> },
-    { href: '/dashboard/sessions', label: 'Sessions', icon: <Play className="h-4 w-4" /> },
-    { href: '/dashboard/analytics', label: 'Analytics', icon: <BarChart3 className="h-4 w-4" /> },
-  ],
-  PLACEMENT_COORDINATOR: [
+  INSTRUCTOR: [
     { href: '/dashboard', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
     { href: '/dashboard/quizzes', label: 'My Quizzes', icon: <BookOpen className="h-4 w-4" /> },
     { href: '/dashboard/sessions', label: 'Sessions', icon: <Play className="h-4 w-4" /> },
     { href: '/dashboard/analytics', label: 'Analytics', icon: <BarChart3 className="h-4 w-4" /> },
+    { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: <Trophy className="h-4 w-4" /> },
   ],
   STUDENT: [
     { href: '/dashboard', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -55,15 +51,13 @@ const roleNavItems: Record<string, Array<{ href: string; label: string; icon: Re
 
 const roleLabels: Record<string, string> = {
   ADMIN: 'Admin',
-  PLACEMENT_REP: 'Placement Rep',
-  PLACEMENT_COORDINATOR: 'Coordinator',
+  INSTRUCTOR: 'Instructor',
   STUDENT: 'Student',
 };
 
 const roleBadgeVariant: Record<string, 'default' | 'success' | 'warning'> = {
   ADMIN: 'warning',
-  PLACEMENT_REP: 'warning',
-  PLACEMENT_COORDINATOR: 'success',
+  INSTRUCTOR: 'success',
   STUDENT: 'default',
 };
 

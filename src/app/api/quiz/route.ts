@@ -73,9 +73,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { scheduledStartTime, scheduledEndTime, ...quizData } = validation.data;
+
     const quiz = await prisma.quiz.create({
       data: {
-        ...validation.data,
+        ...quizData,
+        scheduledStartTime: scheduledStartTime ? new Date(scheduledStartTime) : null,
+        scheduledEndTime: scheduledEndTime ? new Date(scheduledEndTime) : null,
         instructorId: user.id,
       },
       include: {

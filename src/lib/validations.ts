@@ -21,6 +21,8 @@ export const createQuizSchema = z.object({
   enableLeaderboard: z.boolean().default(true),
   enablePowerUps: z.boolean().default(false),
   passingScore: z.number().min(0).max(100).default(50),
+  scheduledStartTime: z.string().datetime().optional(),
+  scheduledEndTime: z.string().datetime().optional(),
 });
 
 export const updateQuizSchema = createQuizSchema.partial();
@@ -79,6 +81,8 @@ export const createSessionSchema = z.object({
   quizId: z.string(),
   allowLateJoin: z.boolean().default(true),
   guestMode: z.boolean().default(true),
+  scheduledStartTime: z.string().datetime().optional(),
+  scheduledEndTime: z.string().datetime().optional(),
 });
 
 export const joinSessionSchema = z.object({

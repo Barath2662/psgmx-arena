@@ -74,9 +74,19 @@ export async function PATCH(
       );
     }
 
+    const { scheduledStartTime, scheduledEndTime, ...quizData } = validation.data;
+
     const updated = await prisma.quiz.update({
       where: { id: params.quizId },
-      data: validation.data,
+      data: {
+        ...quizData,
+        ...(scheduledStartTime !== undefined && {
+          scheduledStartTime: scheduledStartTime ? new Date(scheduledStartTime) : null,
+        }),
+        ...(scheduledEndTime !== undefined && {
+          scheduledEndTime: scheduledEndTime ? new Date(scheduledEndTime) : null,
+        }),
+      },
     });
 
     return NextResponse.json({ quiz: updated });

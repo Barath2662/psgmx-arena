@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
     const [
       totalUsers,
-      totalCoordinators,
+      totalInstructors,
       totalStudents,
       totalQuizzes,
       totalSessions,
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
       recentSessions,
     ] = await Promise.all([
       prisma.user.count(),
-      prisma.user.count({ where: { role: 'PLACEMENT_COORDINATOR' } }),
+      prisma.user.count({ where: { role: 'INSTRUCTOR' } }),
       prisma.user.count({ where: { role: 'STUDENT' } }),
       prisma.quiz.count(),
       prisma.quizSession.count(),
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       stats: {
         totalUsers,
-        totalCoordinators,
+        totalInstructors,
         totalStudents,
         totalQuizzes,
         totalSessions,

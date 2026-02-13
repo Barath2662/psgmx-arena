@@ -20,18 +20,19 @@ import {
   TrendingUp,
   Calendar,
   Star,
+  Download,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const role = user?.role;
 
-  if (role === 'ADMIN' || role === 'PLACEMENT_REP') return <AdminDashboard />;
-  if (role === 'PLACEMENT_COORDINATOR') return <CoordinatorDashboard />;
+  if (role === 'ADMIN') return <AdminDashboard />;
+  if (role === 'INSTRUCTOR') return <InstructorDashboard />;
   return <StudentDashboard userName={user?.name || 'Student'} />;
 }
 
-// ─── ADMIN / PLACEMENT REP DASHBOARD ────────────────────
+// ─── ADMIN DASHBOARD ────────────────────────────────────
 
 function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
@@ -60,8 +61,8 @@ function AdminDashboard() {
           iconColor="text-blue-500"
         />
         <StatCard
-          title="Coordinators"
-          value={stats?.stats?.totalCoordinators ?? '—'}
+          title="Instructors"
+          value={stats?.stats?.totalInstructors ?? '—'}
           icon={<GraduationCap className="h-5 w-5" />}
           description="Quiz managers"
           gradient="from-green-500/10 to-emerald-500/10"
@@ -152,6 +153,16 @@ function AdminDashboard() {
                 <ArrowRight className="h-4 w-4 ml-auto text-muted-foreground" />
               </div>
             </Link>
+            <a href="/api/export/report?all=true" className="block">
+              <div className="flex items-center gap-3 p-3 border rounded-xl hover:bg-muted/50 transition-colors cursor-pointer">
+                <div className="p-2 rounded-lg bg-orange-500/10"><Download className="h-5 w-5 text-orange-500" /></div>
+                <div>
+                  <p className="font-medium">Download Reports</p>
+                  <p className="text-xs text-muted-foreground">Export all test data as Excel</p>
+                </div>
+                <ArrowRight className="h-4 w-4 ml-auto text-muted-foreground" />
+              </div>
+            </a>
           </CardContent>
         </Card>
       </div>
@@ -159,9 +170,9 @@ function AdminDashboard() {
   );
 }
 
-// ─── COORDINATOR DASHBOARD ──────────────────────────────
+// ─── INSTRUCTOR DASHBOARD ───────────────────────────────
 
-function CoordinatorDashboard() {
+function InstructorDashboard() {
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
 
@@ -179,14 +190,21 @@ function CoordinatorDashboard() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Coordinator Dashboard</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Instructor Dashboard</h1>
           <p className="text-muted-foreground mt-1">Create and manage your quizzes & sessions</p>
         </div>
-        <Link href="/dashboard/quizzes/new">
-          <Button variant="arena" className="shadow-md">
-            <Plus className="mr-2 h-4 w-4" /> New Quiz
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <a href="/api/export/report?all=true">
+            <Button variant="outline" className="shadow-sm">
+              <Download className="mr-2 h-4 w-4" /> Download Reports
+            </Button>
+          </a>
+          <Link href="/dashboard/quizzes/new">
+            <Button variant="arena" className="shadow-md">
+              <Plus className="mr-2 h-4 w-4" /> New Quiz
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
