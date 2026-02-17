@@ -410,15 +410,6 @@ function StudentDashboard({ userName }: { userName: string }) {
                 <Mail className="mr-2 h-4 w-4" /> Contact Support
               </Button>
             </a>
-            <a
-              href="https://github.com/psgmx-arena/psgmx-arena"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button variant="ghost" className="w-full mt-2">
-                <Star className="mr-2 h-4 w-4 text-yellow-500" /> Star us on GitHub
-              </Button>
-            </a>
           </CardContent>
         </Card>
       </div>

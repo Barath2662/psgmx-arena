@@ -4,9 +4,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Root path → redirect to login
+  if (pathname === '/') {
+    return NextResponse.redirect(new URL('/auth/login', request.url));
+  }
+
   // Public routes — skip auth check
   if (
-    pathname === '/' ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/join') ||
     pathname.startsWith('/api/auth')

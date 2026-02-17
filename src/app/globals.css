@@ -4,48 +4,64 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* PSGMX Light Theme - Blue tinted */
+    --background: 240 20% 98%;
+    --foreground: 240 20% 15%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 240 20% 15%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 231 48% 48%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 231 48% 48%;
+    --popover-foreground: 240 20% 15%;
+    --primary: 260 50% 65%;
+    --primary-foreground: 240 20% 98%;
+    --secondary: 240 20% 95%;
+    --secondary-foreground: 240 20% 15%;
+    --muted: 240 10% 97%;
+    --muted-foreground: 240 10% 55%;
+    --accent: 240 20% 95%;
+    --accent-foreground: 240 20% 15%;
+    --destructive: 20 80% 65%;
+    --destructive-foreground: 240 20% 98%;
+    --border: 240 10% 90%;
+    --input: 240 10% 90%;
+    --ring: 260 50% 65%;
     --radius: 0.75rem;
+    
+    /* Chart colors */
+    --chart-1: 40 80% 70%;
+    --chart-2: 180 50% 65%;
+    --chart-3: 220 40% 60%;
+    --chart-4: 90 60% 75%;
+    --chart-5: 70 60% 70%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 231 48% 58%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 231 48% 58%;
+    /* PSGMX Dark Theme - True black with blue accents */
+    --background: 0 0% 10%;
+    --foreground: 240 20% 95%;
+    --card: 240 15% 18%;
+    --card-foreground: 240 20% 95%;
+    --popover: 240 15% 18%;
+    --popover-foreground: 240 20% 95%;
+    --primary: 260 50% 70%;
+    --primary-foreground: 240 20% 15%;
+    --secondary: 240 15% 25%;
+    --secondary-foreground: 240 20% 95%;
+    --muted: 240 15% 25%;
+    --muted-foreground: 240 10% 65%;
+    --accent: 240 15% 25%;
+    --accent-foreground: 240 20% 95%;
+    --destructive: 20 80% 70%;
+    --destructive-foreground: 240 20% 95%;
+    --border: 240 15% 20%;
+    --input: 240 15% 20%;
+    --ring: 260 50% 70%;
+    
+    /* Chart colors dark */
+    --chart-1: 260 80% 65%;
+    --chart-2: 180 50% 70%;
+    --chart-3: 90 60% 75%;
+    --chart-4: 70 60% 70%;
+    --chart-5: 40 80% 65%;
   }
 }
 
@@ -60,15 +76,19 @@
 
 @layer utilities {
   .gradient-arena {
-    @apply bg-gradient-to-br from-arena-600 via-arena-700 to-arena-900;
+    @apply bg-gradient-to-br from-primary via-primary/80 to-primary/60;
   }
 
   .glass {
-    @apply bg-white/10 backdrop-blur-lg border border-white/20;
+    @apply bg-background/95 backdrop-blur-md border border-border/50;
   }
 
   .animate-in {
     animation: slideIn 0.3s ease-out;
+  }
+
+  .hover-scale {
+    @apply transition-transform duration-200 hover:scale-105;
   }
 
   @keyframes slideIn {

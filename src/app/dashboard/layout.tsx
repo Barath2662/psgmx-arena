@@ -151,17 +151,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Bottom actions */}
           <div className="border-t p-3 space-y-1">
-            {/* GitHub Star */}
-            <a
-              href="https://github.com/psgmx-arena/psgmx-arena"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button variant="ghost" className="w-full justify-start gap-3 h-9 text-xs">
-                <Star className="h-4 w-4 text-yellow-500" /> Star on GitHub
-              </Button>
-            </a>
-
             {/* Contact Support */}
             <a href="mailto:barathvikramansk@gmail.com">
               <Button variant="ghost" className="w-full justify-start gap-3 h-9 text-xs">
