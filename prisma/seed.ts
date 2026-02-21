@@ -121,7 +121,7 @@ async function main() {
   console.log(`  Email:    ${ADMIN_EMAIL}`);
   console.log(`  Password: ${ADMIN_PASSWORD}`);
   console.log('\nDefault passwords by role:');
-  console.log('  Student:    register number (e.g. 25MX103)');
+  console.log('  Student:    register number (e.g. 25MX444)');
   console.log('  Instructor: instruct@123');
   console.log('  Admin:      admin@123');
 }

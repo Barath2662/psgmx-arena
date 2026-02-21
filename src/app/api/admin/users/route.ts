@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Register number is required for students' }, { status: 400 });
       }
       if (!/^\d{2}MX\d{3}$/i.test(registerNumber)) {
-        return NextResponse.json({ error: 'Invalid register number format (e.g. 25MX103)' }, { status: 400 });
+        return NextResponse.json({ error: 'Invalid register number format (e.g. 25MX444)' }, { status: 400 });
       }
       userEmail = toSyntheticEmail(registerNumber);
     } else {

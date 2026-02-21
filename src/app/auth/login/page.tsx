@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import toast from 'react-hot-toast';
 
-/** Check if input is a register number (e.g. 25MX103) */
+
 function isRegisterNumber(input: string): boolean {
   return /^\d{2}MX\d{3}$/i.test(input.trim());
 }
@@ -98,7 +98,7 @@ export default function LoginPage() {
               <Input
                 id="identifier"
                 type="text"
-                placeholder="25MX103 or admin@email.com"
+                placeholder="Register Number"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 required
