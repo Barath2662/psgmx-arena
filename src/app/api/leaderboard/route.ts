@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables } from '@/lib/db';
 
 // GET /api/leaderboard?type=session&id=xxx  — per-test leaderboard
 // GET /api/leaderboard?type=weekly           — weekly leaderboard
@@ -19,27 +19,27 @@ export async function GET(req: NextRequest) {
 
     // ── Per-test leaderboard ──
     if (type === 'session' && sessionId) {
-      const participants = await prisma.sessionParticipant.findMany({
-        where: { sessionId },
-        orderBy: { totalScore: 'desc' },
-        take: limit,
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-          session: {
-            select: {
-              quiz: { select: { title: true } },
-              startedAt: true,
-              endedAt: true,
-            },
-          },
-        },
-      });
+      const { data: participants, error } = await db
+        .from(Tables.session_participants)
+        .select(`
+          *,
+          user:users(id, name, email),
+          session:quiz_sessions(
+            quiz:quizzes(title),
+            startedAt, endedAt
+          )
+        `)
+        .eq('sessionId', sessionId)
+        .order('totalScore', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
 
       return NextResponse.json({
         type: 'session',
         sessionId,
-        quizTitle: participants[0]?.session?.quiz?.title || '',
-        leaderboard: participants.map((p, i) => ({
+        quizTitle: participants?.[0]?.session?.quiz?.title || '',
+        leaderboard: (participants || []).map((p: any, i: number) => ({
           rank: i + 1,
           userId: p.userId,
           name: p.user?.name || p.guestName || 'Anonymous',
@@ -56,77 +56,99 @@ export async function GET(req: NextRequest) {
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
 
-      const weeklyScores = await prisma.sessionParticipant.groupBy({
-        by: ['userId'],
-        where: {
-          userId: { not: null },
-          joinedAt: { gte: weekAgo },
-        },
-        _sum: { totalScore: true },
-        _count: { id: true },
-        _max: { streak: true },
-        orderBy: { _sum: { totalScore: 'desc' } },
-        take: limit,
+      // Get all participants from last week with userId
+      const { data: weeklyParticipants, error } = await db
+        .from(Tables.session_participants)
+        .select('userId, totalScore, streak')
+        .not('userId', 'is', null)
+        .gte('joinedAt', weekAgo.toISOString());
+
+      if (error) throw error;
+
+      // Group by userId manually
+      const userScores = new Map<string, { totalScore: number; count: number; maxStreak: number }>();
+      (weeklyParticipants || []).forEach((p: any) => {
+        if (!p.userId) return;
+        const existing = userScores.get(p.userId) || { totalScore: 0, count: 0, maxStreak: 0 };
+        existing.totalScore += p.totalScore || 0;
+        existing.count += 1;
+        existing.maxStreak = Math.max(existing.maxStreak, p.streak || 0);
+        userScores.set(p.userId, existing);
       });
 
+      // Sort by total score and limit
+      const sorted = Array.from(userScores.entries())
+        .sort((a, b) => b[1].totalScore - a[1].totalScore)
+        .slice(0, limit);
+
       // Fetch user details
-      const userIds = weeklyScores
-        .map((s) => s.userId)
-        .filter((id): id is string => id !== null);
-      const users = await prisma.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, name: true, email: true },
-      });
-      const userMap = new Map(users.map((u) => [u.id, u]));
+      const userIds = sorted.map(([id]) => id);
+      const { data: users } = await db
+        .from(Tables.users)
+        .select('id, name, email')
+        .in('id', userIds.length > 0 ? userIds : ['__none__']);
+
+      const userMap = new Map((users || []).map((u: any) => [u.id, u]));
 
       return NextResponse.json({
         type: 'weekly',
         periodStart: weekAgo.toISOString(),
         periodEnd: new Date().toISOString(),
-        leaderboard: weeklyScores.map((s, i) => ({
+        leaderboard: sorted.map(([userId, s], i) => ({
           rank: i + 1,
-          userId: s.userId,
-          name: userMap.get(s.userId!)?.name || 'Unknown',
-          email: userMap.get(s.userId!)?.email || null,
-          totalScore: s._sum.totalScore || 0,
-          quizzesTaken: s._count.id,
-          bestStreak: s._max.streak || 0,
+          userId,
+          name: userMap.get(userId)?.name || 'Unknown',
+          email: userMap.get(userId)?.email || null,
+          totalScore: s.totalScore,
+          quizzesTaken: s.count,
+          bestStreak: s.maxStreak,
         })),
       });
     }
 
     // ── Overall (all-time) leaderboard ──
-    const overallScores = await prisma.sessionParticipant.groupBy({
-      by: ['userId'],
-      where: { userId: { not: null } },
-      _sum: { totalScore: true },
-      _count: { id: true },
-      _max: { streak: true },
-      _avg: { totalScore: true },
-      orderBy: { _sum: { totalScore: 'desc' } },
-      take: limit,
+    const { data: allParticipants, error } = await db
+      .from(Tables.session_participants)
+      .select('userId, totalScore, streak')
+      .not('userId', 'is', null);
+
+    if (error) throw error;
+
+    // Group by userId manually
+    const userScores = new Map<string, { totalScore: number; count: number; maxStreak: number; sumScore: number }>();
+    (allParticipants || []).forEach((p: any) => {
+      if (!p.userId) return;
+      const existing = userScores.get(p.userId) || { totalScore: 0, count: 0, maxStreak: 0, sumScore: 0 };
+      existing.totalScore += p.totalScore || 0;
+      existing.count += 1;
+      existing.maxStreak = Math.max(existing.maxStreak, p.streak || 0);
+      existing.sumScore += p.totalScore || 0;
+      userScores.set(p.userId, existing);
     });
 
-    const userIds = overallScores
-      .map((s) => s.userId)
-      .filter((id): id is string => id !== null);
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: { id: true, name: true, email: true },
-    });
-    const userMap = new Map(users.map((u) => [u.id, u]));
+    const sorted = Array.from(userScores.entries())
+      .sort((a, b) => b[1].totalScore - a[1].totalScore)
+      .slice(0, limit);
+
+    const userIds = sorted.map(([id]) => id);
+    const { data: users } = await db
+      .from(Tables.users)
+      .select('id, name, email')
+      .in('id', userIds.length > 0 ? userIds : ['__none__']);
+
+    const userMap = new Map((users || []).map((u: any) => [u.id, u]));
 
     return NextResponse.json({
       type: 'overall',
-      leaderboard: overallScores.map((s, i) => ({
+      leaderboard: sorted.map(([userId, s], i) => ({
         rank: i + 1,
-        userId: s.userId,
-        name: userMap.get(s.userId!)?.name || 'Unknown',
-        email: userMap.get(s.userId!)?.email || null,
-        totalScore: s._sum.totalScore || 0,
-        avgScore: Math.round(s._avg.totalScore || 0),
-        quizzesTaken: s._count.id,
-        bestStreak: s._max.streak || 0,
+        userId,
+        name: userMap.get(userId)?.name || 'Unknown',
+        email: userMap.get(userId)?.email || null,
+        totalScore: s.totalScore,
+        avgScore: s.count > 0 ? Math.round(s.sumScore / s.count) : 0,
+        quizzesTaken: s.count,
+        bestStreak: s.maxStreak,
       })),
     });
   } catch (error) {

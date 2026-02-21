@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables } from '@/lib/db';
 
 // GET /api/analytics/session/[sessionId]
 export async function GET(
@@ -13,31 +13,29 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const quizSession = await prisma.quizSession.findUnique({
-      where: { id: params.sessionId },
-      include: {
-        quiz: {
-          include: {
-            questions: { orderBy: { order: 'asc' } },
-          },
-        },
-        participants: {
-          include: {
-            user: { select: { name: true, email: true } },
-            answers: true,
-          },
-          orderBy: { totalScore: 'desc' },
-        },
-      },
-    });
+    const { data: quizSession, error } = await db
+      .from(Tables.quiz_sessions)
+      .select(`
+        *,
+        quiz:quizzes(*, questions(*)),
+        participants:session_participants(
+          *,
+          user:users(name, email),
+          answers:student_answers(*)
+        )
+      `)
+      .eq('id', params.sessionId)
+      .order('order', { referencedTable: 'quiz_sessions.quiz.questions', ascending: true })
+      .order('totalScore', { referencedTable: 'session_participants', ascending: false })
+      .single();
 
-    if (!quizSession) {
+    if (error || !quizSession) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
     // Compute analytics
-    const participants = quizSession.participants;
-    const questions = quizSession.quiz.questions;
+    const participants = quizSession.participants || [];
+    const questions = quizSession.quiz?.questions || [];
 
     const scores = participants.map((p: any) => p.totalScore);
     const avgScore = scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
@@ -49,12 +47,12 @@ export async function GET(
     // Per-question stats
     const questionStats = questions.map((q: any) => {
       const answers = participants.flatMap((p: any) =>
-        p.answers.filter((a: any) => a.questionId === q.id)
+        (p.answers || []).filter((a: any) => a.questionId === q.id)
       );
       const correct = answers.filter((a: any) => a.isCorrect).length;
       const total = answers.length;
       const avgTime = total > 0
-        ? answers.reduce((sum: number, a: any) => sum + a.timeTakenMs, 0) / total
+        ? answers.reduce((sum: number, a: any) => sum + (a.timeTakenMs || 0), 0) / total
         : 0;
 
       return {
@@ -94,7 +92,7 @@ export async function GET(
         ? Math.round((p.correctCount / questions.length) * 100)
         : 0,
       rank: p.rank,
-      answers: p.answers.map((a: any) => ({
+      answers: (p.answers || []).map((a: any) => ({
         questionId: a.questionId,
         isCorrect: a.isCorrect,
         score: a.score,
@@ -105,12 +103,12 @@ export async function GET(
     return NextResponse.json({
       analytics: {
         sessionId: quizSession.id,
-        quizTitle: quizSession.quiz.title,
+        quizTitle: quizSession.quiz?.title,
         totalParticipants: participants.length,
         avgScore: Math.round(avgScore),
         medianScore,
         maxPossibleScore: maxPossible,
-        completionRate: 100, // All who joined
+        completionRate: 100,
         questionStats,
         scoreDistribution: distribution,
         studentReports,

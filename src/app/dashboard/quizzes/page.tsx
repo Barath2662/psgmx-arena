@@ -31,9 +31,14 @@ export default function QuizzesPage() {
   }
 
   async function deleteQuiz(id: string) {
-    if (!confirm('Are you sure you want to delete this quiz?')) return;
+    if (!confirm('Are you sure you want to delete this quiz and all its sessions?')) return;
     try {
-      await fetch(`/api/quiz/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/quiz/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || 'Failed to delete quiz');
+        return;
+      }
       setQuizzes((prev) => prev.filter((q) => q.id !== id));
       toast.success('Quiz deleted');
     } catch {
@@ -140,10 +145,7 @@ export default function QuizzesPage() {
                 </p>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
                   <span className="flex items-center gap-1">
-                    <BookOpen className="h-3 w-3" /> {quiz._count?.questions || 0} questions
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Play className="h-3 w-3" /> {quiz._count?.sessions || 0} sessions
+                    <BookOpen className="h-3 w-3" /> {quiz.questions?.length ?? 0} questions
                   </span>
                 </div>
                 <div className="flex gap-2">

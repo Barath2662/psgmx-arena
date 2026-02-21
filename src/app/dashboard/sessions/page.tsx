@@ -58,7 +58,7 @@ export default function SessionsPage() {
                     <h3 className="font-semibold text-lg">{s.quiz?.title}</h3>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <Users className="h-3 w-3" /> {s._count?.participants || 0} participants
+                        <Users className="h-3 w-3" /> {s.participants?.length ?? 0} participants
                       </span>
                       <span className="flex items-center gap-1 font-mono text-base">
                         Join: {s.joinCode}

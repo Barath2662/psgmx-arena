@@ -1,0 +1,9 @@
+# Install all 6 core languages
+docker compose exec piston /piston/packages/install.sh python 3.10.0
+docker compose exec piston /piston/packages/install.sh node 18.15.0
+docker compose exec piston /piston/packages/install.sh typescript 5.0.3
+docker compose exec piston /piston/packages/install.sh java 15.0.2
+docker compose exec piston /piston/packages/install.sh gcc 10.2.0
+docker compose exec piston /piston/packages/install.sh g++ 10.2.0
+
+PISTON_API_URL=http://localhost:2000/api/v2

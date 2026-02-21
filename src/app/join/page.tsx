@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Zap, Loader2, ArrowRight } from 'lucide-react';
@@ -15,6 +15,20 @@ export default function JoinPage() {
   const [joinCode, setJoinCode] = useState('');
   const [guestName, setGuestName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState<{ name: string | null; registerNumber: string | null } | null>(null);
+
+  // Auto-fill name for logged-in users
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.user) {
+          setLoggedInUser(data.user);
+          if (data.user.name) setGuestName(data.user.name);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault();
@@ -42,7 +56,10 @@ export default function JoinPage() {
 
       // Store participant info
       sessionStorage.setItem('participantId', participantId);
-      sessionStorage.setItem('participantName', data.participant.name || guestName);
+      sessionStorage.setItem('participantName', data.participant.name || guestName || 'Player');
+      if (data.participant.registerNumber) {
+        sessionStorage.setItem('participantRegNo', data.participant.registerNumber);
+      }
 
       toast.success('Joined successfully!');
       router.push(`/play/${sessionId}`);
@@ -78,13 +95,19 @@ export default function JoinPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="guestName">Your Name (optional if logged in)</Label>
+              <Label htmlFor="guestName">Display Name {loggedInUser ? '' : '(required for guests)'}</Label>
               <Input
                 id="guestName"
                 placeholder="Your display name"
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
+                required={!loggedInUser}
               />
+              {loggedInUser?.registerNumber && (
+                <p className="text-xs text-muted-foreground">
+                  Reg. No: <span className="font-mono font-medium">{loggedInUser.registerNumber}</span>
+                </p>
+              )}
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">

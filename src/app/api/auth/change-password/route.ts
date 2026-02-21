@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables } from '@/lib/db';
 
 // POST /api/auth/change-password - Mark password as changed
 export async function POST() {
@@ -10,12 +10,12 @@ export async function POST() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Update mustChangePassword flag
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { mustChangePassword: false },
-    });
+    const { error } = await db
+      .from(Tables.users)
+      .update({ mustChangePassword: false })
+      .eq('id', user.id);
 
+    if (error) throw error;
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error changing password:', error);

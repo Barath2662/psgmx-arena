@@ -1,31 +1,41 @@
 # PSGMX Arena
 
-**Live Quiz & Coding Platform** — Real-time, instructor-led quizzes and coding challenges with instant leaderboards, power-ups, and analytics.
+**Live Quiz & Coding Platform** - Real-time, instructor-led quizzes and coding challenges with instant leaderboards, power-ups, and analytics.
 
-> Any instructor can create a live quiz or coding session, students join instantly, everyone moves question-by-question in sync, results update in real time, zero lag, fully open-source.
+> Any instructor can create a live quiz or coding session, students join instantly, everyone moves question-by-question in sync, results update in real time.
 
 ---
 
 ## Features
 
 ### Core Platform
-- **18 Question Types** — MCQ, Multi-Select, True/False, Fill in the Blank, Short Answer, Numeric, Code, Ordering, Match, Drag-Drop, Case-Based, Rapid Fire, Long Answer, Hotspot, Matrix, Slider, File Upload, Drawing
-- **Real-Time Sync** — Socket.IO-powered question-by-question flow with sub-second updates
-- **Live Leaderboard** — Animated rankings with streak multipliers and speed bonuses
-- **Code Sandbox** — Monaco Editor + Piston execution engine supporting 10 languages (Python, JavaScript, TypeScript, Java, C, C++, Go, Rust, Ruby, PHP)
-- **Power-Ups** — Second Chance, Time Freeze, Fifty-Fifty, Hint system for gamified engagement
+- **18 Question Types** - MCQ, Multi-Select, True/False, Fill in the Blank, Short Answer, Numeric, Code, Ordering, Match, Drag-Drop, Case-Based, Rapid Fire, Long Answer, Hotspot, Matrix, Slider, File Upload, Drawing
+- **Real-Time Sync** - Socket.IO-powered question-by-question flow with sub-second updates
+- **Live Leaderboard** - Animated rankings with streak multipliers and speed bonuses
+- **Code Sandbox** - Monaco Editor + Piston execution engine supporting 6 core languages (Python, JavaScript, TypeScript, Java, C, C++)
+- **Code Playground** - Standalone coding challenges accessible from all role dashboards
+- **Power-Ups** - Second Chance, Time Freeze, Fifty-Fifty, Hint system for gamified engagement
+
+### Code Sandbox Integration
+
+The code sandbox is integrated at three levels:
+
+1. **Quiz Code Questions** - Instructors add CODE-type questions while building a quiz, each with selectable language, starter code, and test cases (input/expected output) for auto-grading.
+2. **Student Play View** - During a live quiz, CODE questions present a full Monaco Editor with syntax highlighting, run/test capabilities, and real-time execution via Piston API.
+3. **Code Playground** - Standalone practice environment at `/dashboard/playground` with curated challenges (Two Sum, FizzBuzz, Palindrome).
 
 ### Roles & Access
+
 | Role | Capabilities |
 |------|-------------|
-| **Admin** | Full platform management, analytics, user role management |
-| **Instructor** | Create quizzes, host live sessions, view session analytics |
-| **Student** | Join sessions via 6-digit code, play quizzes, view leaderboard history |
+| **Admin** | Full platform management, analytics, user role management, code playground |
+| **Instructor** | Create quizzes (with code questions), host live sessions, view session analytics, code playground |
+| **Student** | Join sessions via 6-digit code, play quizzes (including code), view leaderboard, code playground |
 
 ### Analytics & Insights
 - Per-session analytics with question-level breakdown
 - Score distribution histograms
-- Student performance reports with CSV/PDF export
+- Student performance reports with Excel export
 - Global platform statistics (Admin)
 
 ---
@@ -36,10 +46,10 @@
 |-------|-----------|
 | **Framework** | Next.js 14 (App Router) |
 | **Language** | TypeScript 5.4 |
-| **Database** | PostgreSQL + Prisma ORM |
-| **Auth** | NextAuth.js v4 (Credentials, GitHub, Google) |
+| **Database** | PostgreSQL via Supabase |
+| **Auth** | Supabase Auth |
 | **Real-Time** | Socket.IO (dedicated server on port 3001) |
-| **Cache** | Redis (ioredis) — session state, leaderboards, timers |
+| **State** | In-memory store (Redis-compatible API) |
 | **UI** | Tailwind CSS + Radix UI + Lucide Icons + Framer Motion |
 | **Code Editor** | Monaco Editor (@monaco-editor/react) |
 | **Code Execution** | Piston API (sandboxed multi-language runner) |
@@ -53,69 +63,61 @@
 
 ```
 psgmx-arena/
-├── prisma/
-│   ├── schema.prisma        # 15 models, 7 enums — full data layer
-│   └── seed.ts               # Demo data (admin, instructor, 5 students, sample quiz)
-├── server/
-│   ├── index.ts              # Socket.IO server (port 3001)
-│   └── handlers.ts           # All WebSocket event handlers
-├── src/
-│   ├── app/
-│   │   ├── page.tsx          # Landing page
-│   │   ├── layout.tsx        # Root layout (providers, toaster)
-│   │   ├── auth/
-│   │   │   ├── login/        # Credentials login
-│   │   │   └── register/     # Registration with role select
-│   │   ├── join/             # 6-digit session code entry
-│   │   ├── play/[sessionId]/ # Student play view (502 lines)
-│   │   ├── session/[sessionId]/host/  # Instructor host controls (315 lines)
-│   │   ├── dashboard/
-│   │   │   ├── page.tsx      # Role-specific dashboards
-│   │   │   ├── layout.tsx    # Sidebar navigation
-│   │   │   ├── quizzes/      # Quiz CRUD + question builder
-│   │   │   ├── sessions/     # Session management
-│   │   │   ├── playground/   # Code playground with challenges
-│   │   │   ├── leaderboard/  # Student ranking history
-│   │   │   └── analytics/    # Platform + session analytics
-│   │   └── api/
-│   │       ├── auth/         # NextAuth + registration
-│   │       ├── quiz/         # Quiz CRUD + questions
-│   │       ├── session/      # Session lifecycle + join
-│   │       ├── code/execute/ # Piston code execution
-│   │       ├── admin/        # User management + global analytics
-│   │       └── analytics/    # Per-session analytics
-│   ├── components/
-│   │   ├── ui/               # 10 Shadcn-style components
-│   │   ├── code-sandbox.tsx  # Monaco + Piston (295 lines)
-│   │   ├── live-leaderboard.tsx  # Animated rankings
-│   │   └── power-ups.tsx     # Gamification power-ups
-│   ├── lib/
-│   │   ├── prisma.ts         # Singleton Prisma client
-│   │   ├── redis.ts          # Redis helpers (state, leaderboard, timers)
-│   │   ├── auth.ts           # NextAuth configuration
-│   │   ├── utils.ts          # Scoring, formatting, code generation
-│   │   └── validations.ts    # Zod schemas for all inputs
-│   ├── providers/
-│   │   ├── auth-provider.tsx
-│   │   └── socket-provider.tsx
-│   ├── types/
-│   │   ├── next-auth.d.ts    # Session type augmentation
-│   │   └── socket.ts         # Socket.IO event types
-│   └── middleware.ts          # Route protection (role-based)
-├── public/
-│   ├── logo.svg
-│   ├── favicon.svg
-│   ├── manifest.json
-│   └── robots.txt
-├── Dockerfile                 # Next.js production build
-├── Dockerfile.socket          # Socket.IO server
-├── docker-compose.yml         # Full stack (Postgres, Redis, Piston, App, Socket)
-├── next.config.js
-├── tailwind.config.js
-├── tsconfig.json
-├── tsconfig.server.json
-├── .env.example
-└── package.json
++-- prisma/
+|   +-- schema.prisma          # 15 models, 7 enums
+|   +-- seed.ts                # Demo data seeder
++-- server/
+|   +-- index.ts               # Socket.IO server (port 3001)
+|   +-- handlers.ts            # WebSocket event handlers with timer
++-- scripts/
+|   +-- test-db.ts             # DB connectivity test
++-- src/
+|   +-- middleware.ts           # Route protection
+|   +-- app/
+|   |   +-- page.tsx            # Landing page
+|   |   +-- layout.tsx          # Root layout (providers, toaster)
+|   |   +-- auth/               # Login, forgot/change password
+|   |   +-- join/               # 6-digit session code entry
+|   |   +-- play/[sessionId]/   # Student play view (with CodeSandbox)
+|   |   +-- session/.../host/   # Instructor host controls
+|   |   +-- dashboard/
+|   |   |   +-- page.tsx        # Role-specific dashboards
+|   |   |   +-- layout.tsx      # Sidebar navigation
+|   |   |   +-- quizzes/        # Quiz CRUD + question builder (CODE)
+|   |   |   +-- sessions/       # Session management
+|   |   |   +-- playground/     # Code playground with challenges
+|   |   |   +-- users/          # Admin user management
+|   |   |   +-- leaderboard/    # Rankings
+|   |   |   +-- analytics/      # Analytics
+|   |   +-- api/
+|   |       +-- auth/           # Supabase auth routes
+|   |       +-- quiz/           # Quiz CRUD + questions (CRUD)
+|   |       +-- session/        # Session + join + answer persistence
+|   |       +-- code/execute/   # Piston code execution
+|   |       +-- admin/          # User management + analytics
+|   |       +-- leaderboard/    # Leaderboard API
+|   |       +-- export/         # Excel report export
+|   +-- components/
+|   |   +-- ui/                 # 10 Shadcn-style components
+|   |   +-- code-sandbox.tsx    # Monaco + Piston (10 langs, test cases)
+|   |   +-- live-leaderboard.tsx
+|   |   +-- fullscreen-guard.tsx
+|   |   +-- power-ups.tsx
+|   |   +-- contact-support.tsx
+|   |   +-- theme-toggle.tsx
+|   |   +-- providers/          # Auth, Socket, Theme providers
+|   +-- lib/
+|   |   +-- db.ts              # Supabase admin client
+|   |   +-- redis.ts           # In-memory store
+|   |   +-- auth.ts            # Auth helpers
+|   |   +-- utils.ts           # Scoring, formatting
+|   |   +-- validations.ts     # Zod schemas
+|   +-- types/
+|       +-- socket.ts          # Socket.IO typed events
++-- Dockerfile
++-- Dockerfile.socket
++-- docker-compose.yml
++-- package.json
 ```
 
 ---
@@ -125,90 +127,62 @@ psgmx-arena/
 ### Prerequisites
 
 - **Node.js** 18+ (20 recommended)
-- **PostgreSQL** 14+
-- **Redis** 7+
-- **Docker** (optional, for one-command deployment)
+- **Supabase** project (for PostgreSQL and Auth)
+- **Docker** (optional, for containerized deployment)
 
-### Option 1: Docker Compose (Recommended)
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/psgmx-arena.git
-cd psgmx-arena
-
-# Start all services (Postgres, Redis, Piston, App, Socket)
-docker compose up -d
-
-# Run database migrations
-docker compose exec app npx prisma migrate deploy
-
-# Seed demo data
-docker compose exec app npx prisma db seed
-
-# Open in browser
-# App:    http://localhost:3000
-# Socket: http://localhost:3001
-```
-
-### Option 2: Local Development
+### Local Development
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-org/psgmx-arena.git
+git clone <repo-url>
 cd psgmx-arena
 npm install
 
 # 2. Set up environment
 cp .env.example .env
-# Edit .env with your database and Redis URLs
+# Edit .env with your Supabase credentials
 
-# 3. Set up database
-npx prisma generate
-npx prisma db push        # or: npx prisma migrate dev
-npx prisma db seed         # optional: load demo data
+# 3. Push database schema
+npx prisma db push
 
-# 4. Start development servers (in separate terminals)
-npm run dev                # Next.js on :3000
-npm run socket:dev         # Socket.IO on :3001
+# 4. Start development servers
+npm run dev          # Next.js on :3000
+npm run socket:dev   # Socket.IO on :3001
+
+# Or use the dev script:
+# Windows: dev.bat
+# Linux/Mac: ./dev.sh
 
 # 5. Open http://localhost:3000
 ```
 
-### Demo Credentials (after seeding)
+### Docker Compose
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@psgmx.edu | password123 |
-| Instructor | instructor@psgmx.edu | password123 |
-| Student | student1@psgmx.edu | password123 |
+```bash
+docker compose up -d
+```
+
+### Default Admin Password
+
+New users created by admin get the default password: `Psgmx123`  
+Users must change their password on first login.
 
 ---
 
 ## Environment Variables
 
 ```env
-# Database
-DATABASE_URL="postgresql://user:password@localhost:5432/psgmx_arena"
+# Database (Supabase PostgreSQL)
+DATABASE_URL="postgresql://..."
+DIRECT_URL="postgresql://..."
 
-# NextAuth
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="generate-a-random-secret"
-
-# OAuth (optional)
-GITHUB_CLIENT_ID=""
-GITHUB_CLIENT_SECRET=""
-GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_SECRET=""
-
-# Redis
-REDIS_URL="redis://localhost:6379"
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-key"
+SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 
 # Code Execution
 PISTON_API_URL="https://emkc.org/api/v2/piston"
-
-# AI (optional)
-OLLAMA_URL="http://localhost:11434"
-AI_MODEL="llama3"
 
 # App URLs
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
@@ -222,49 +196,38 @@ NEXT_PUBLIC_WS_URL="http://localhost:3001"
 ### Real-Time Quiz Flow
 
 ```
-┌─────────────┐     Socket.IO      ┌──────────────┐
-│  Instructor  │◄──────────────────►│  Socket.IO   │
-│  (Host View) │    room:session:X  │   Server     │
-└─────────────┘                     │  (port 3001) │
-                                    └──────┬───────┘
-                                           │
-                                    ┌──────┴───────┐
-                                    │    Redis     │
-                                    │ (state/LB)   │
-                                    └──────┬───────┘
-                                           │
-┌─────────────┐     Socket.IO      ┌──────┴───────┐
-│  Student 1   │◄──────────────────►│              │
-│  Student 2   │◄──────────────────►│  Broadcast   │
-│  Student N   │◄──────────────────►│              │
-└─────────────┘                     └──────────────┘
+Instructor (Host View)
+        |
+   Socket.IO  <-->  Socket.IO Server (:3001)
+        |                    |
+        |             In-Memory Store
+        |            (state, leaderboard)
+        |                    |
+   Socket.IO  <-->       Broadcast
+        |
+Students (Play View with CodeSandbox)
 ```
 
-1. **Instructor** creates a quiz and starts a live session
-2. Students **join** via 6-digit code (or direct link)
-3. Instructor advances questions — all clients receive in sync
-4. Students submit answers — scored with **speed bonus** + **streak multiplier**
-5. Leaderboard updates in real time via Redis sorted sets
-6. Session ends — full analytics available with export
+1. Instructor creates a quiz (with optional CODE questions) and starts a live session
+2. Students join via 6-digit code
+3. Instructor advances questions - all clients receive in sync with auto-timer
+4. For CODE questions, students code in Monaco Editor and execute via Piston API
+5. Answers are persisted to database and counted in real-time
+6. Leaderboard updates via in-memory sorted sets
+7. Session ends - full analytics available with Excel export
 
 ### Scoring Formula
 
 ```
-score = basePoints × speedBonus × streakMultiplier
+score = basePoints * speedBonus * streakMultiplier
 
-speedBonus = 1 + (0.5 × timeRemaining / totalTime)
-streakMultiplier = 1.0 → 1.1 → 1.2 → 1.3 → 1.5 (consecutive corrects)
+speedBonus = 1 + (0.5 * timeRemaining / totalTime)
+streakMultiplier = 1.0, 1.1, 1.2, 1.3, 1.5 (consecutive corrects)
 ```
 
 ---
 
 ## API Reference
-
-### Authentication
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/[...nextauth]` | NextAuth sign-in |
 
 ### Quizzes
 | Method | Endpoint | Description |
@@ -275,8 +238,9 @@ streakMultiplier = 1.0 → 1.1 → 1.2 → 1.3 → 1.5 (consecutive corrects)
 | PATCH | `/api/quiz/:id` | Update quiz |
 | DELETE | `/api/quiz/:id` | Delete quiz |
 | GET | `/api/quiz/:id/questions` | List questions |
-| POST | `/api/quiz/:id/questions` | Add question |
+| POST | `/api/quiz/:id/questions` | Add question (supports CODE type) |
 | PUT | `/api/quiz/:id/questions` | Reorder questions |
+| DELETE | `/api/quiz/:id/questions?questionId=X` | Delete a question |
 
 ### Sessions
 | Method | Endpoint | Description |
@@ -285,50 +249,63 @@ streakMultiplier = 1.0 → 1.1 → 1.2 → 1.3 → 1.5 (consecutive corrects)
 | POST | `/api/session` | Create session |
 | GET | `/api/session/:id` | Get session details |
 | POST | `/api/session/join` | Join via code |
+| POST | `/api/session/:id/answer` | Persist student answer |
 
 ### Code Execution
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/code/execute` | Run code via Piston |
 
-### Admin & Analytics
+### Admin
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/admin/users` | List users |
 | PATCH | `/api/admin/users` | Update user role |
+| POST | `/api/admin/users` | Create user |
 | GET | `/api/admin/analytics` | Global statistics |
-| GET | `/api/analytics/session/:id` | Session analytics |
+| GET | `/api/export/report` | Export Excel report |
+
+---
+
+## Supported Languages
+
+| Language | Version |
+|----------|---------|
+| Python 3 | 3.10.0 |
+| JavaScript | 18.15.0 |
+| TypeScript | 5.0.3 |
+| Java | 15.0.2 |
+| C | 10.2.0 |
+| C++ | 10.2.0 |
+| Go | 1.16.2 |
+| Rust | 1.68.2 |
+| Ruby | 3.0.1 |
+| PHP | 8.2.3 |
 
 ---
 
 ## WebSocket Events
 
-### Client → Server
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `JOIN_SESSION` | `{ sessionId, userId?, guestName? }` | Join a session room |
-| `LEAVE_SESSION` | `{ sessionId, participantId }` | Leave session |
-| `START_SESSION` | `{ sessionId }` | Start the quiz |
-| `NEXT_QUESTION` | `{ sessionId, questionIndex }` | Advance to next question |
-| `LOCK_QUESTION` | `{ sessionId, questionIndex }` | Lock answers |
-| `SHOW_RESULTS` | `{ sessionId, questionIndex }` | Show question results |
-| `END_SESSION` | `{ sessionId }` | End the session |
-| `SUBMIT_ANSWER` | `{ sessionId, questionId, answer, timeTaken }` | Submit answer |
-| `USE_POWER_UP` | `{ sessionId, powerUpType }` | Activate power-up |
+### Client to Server
+| Event | Payload |
+|-------|---------|
+| `JOIN_SESSION` | `{ sessionId, participantId }` |
+| `START_SESSION` | `{ sessionId, timePerQuestion? }` |
+| `NEXT_QUESTION` | `{ sessionId, timePerQuestion? }` |
+| `LOCK_QUESTION` | `{ sessionId }` |
+| `SHOW_RESULTS` | `{ sessionId }` |
+| `END_SESSION` | `{ sessionId }` |
+| `SUBMIT_ANSWER` | `{ sessionId, participantId, questionId, answerData, timeTakenMs }` |
 
-### Server → Client
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `SESSION_JOINED` | `{ participant, participantCount }` | Confirm join |
-| `PARTICIPANT_JOINED` | `{ participant, participantCount }` | New participant |
-| `SESSION_STARTED` | `{ totalQuestions }` | Quiz started |
-| `QUESTION_DELIVERED` | `{ question, index, total, timeLimit }` | New question |
-| `QUESTION_LOCKED` | `{}` | Answers locked |
-| `QUESTION_RESULTS` | `{ stats, leaderboard }` | Results revealed |
-| `TIMER_TICK` | `{ remaining }` | Timer update |
-| `SESSION_ENDED` | `{ finalLeaderboard, analytics }` | Session over |
-| `ANSWER_SUBMITTED` | `{ participantId, score, streak }` | Answer confirmed |
-| `LEADERBOARD_UPDATE` | `{ entries }` | Rankings update |
+### Server to Client
+| Event | Payload |
+|-------|---------|
+| `SESSION_STATE_CHANGE` | `{ state, currentQuestionIndex }` |
+| `PARTICIPANT_JOINED` | `{ id, name, count }` |
+| `ANSWER_COUNT_UPDATE` | `{ questionIndex, count, total }` |
+| `TIMER_SYNC` | `{ remaining }` |
+| `QUESTION_RESULTS` | `{ questionIndex, correctAnswer, stats, leaderboard }` |
+| `SESSION_COMPLETE` | `{ finalLeaderboard, analytics }` |
 
 ---
 
@@ -336,28 +313,14 @@ streakMultiplier = 1.0 → 1.1 → 1.2 → 1.3 → 1.5 (consecutive corrects)
 
 **15 models** across the full quiz lifecycle:
 
-- `User` — Roles (Admin/Instructor/Student), OAuth accounts
-- `Quiz` — Settings, mode, status, time limits, shuffle, tags
-- `Question` — 18 types, options, correct answers, hints, code templates, sub-questions
-- `QuizSession` — Live session state, join code, scheduling
-- `SessionParticipant` — Scores, streaks, power-ups, connection status
-- `StudentAnswer` — Per-question responses with timing data
-- `QuizAnalytics` — Aggregated session metrics
-- `AbuseReport` — Tab-switch and copy-paste detection
-
-Run `npx prisma studio` to browse the database visually.
-
----
-
-## Docker Services
-
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| `postgres` | postgres:16-alpine | 5432 | Primary database |
-| `redis` | redis:7-alpine | 6379 | Cache, leaderboards, timers |
-| `piston` | ghcr.io/engineer-man/piston | 2000 | Sandboxed code execution |
-| `app` | Custom (Dockerfile) | 3000 | Next.js application |
-| `socket` | Custom (Dockerfile.socket) | 3001 | Socket.IO server |
+- `User` - Roles (Admin/Instructor/Student), Supabase Auth integration
+- `Quiz` - Settings, mode, status, code question toggle, tags
+- `Question` - 18 types, CODE questions (language, starter code, test cases)
+- `QuizSession` - Live session state, join code
+- `SessionParticipant` - Scores, streaks, connection status
+- `StudentAnswer` - Responses with timing, code output, test results
+- `QuizAnalytics` - Aggregated session metrics
+- `PasswordResetRequest` - Admin-managed password resets
 
 ---
 
@@ -368,32 +331,17 @@ npm run dev          # Start Next.js dev server
 npm run build        # Production build
 npm run start        # Start production server
 npm run socket:dev   # Start Socket.IO server
-npm run db:generate  # Generate Prisma client
-npm run db:push      # Push schema to database
-npm run db:migrate   # Run migrations
-npm run db:seed      # Seed demo data
-npm run db:studio    # Open Prisma Studio
 npm run typecheck    # TypeScript type checking
 npm run lint         # ESLint
 ```
 
 ---
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit changes: `git commit -m 'Add my feature'`
-4. Push to branch: `git push origin feature/my-feature`
-5. Open a Pull Request
-
----
-
 ## License
 
-MIT — See [LICENSE](LICENSE) for details.
+MIT
 
 ---
 
-Built with Next.js, Socket.IO, Prisma, and Redis.  
-**PSGMX Arena** — Where learning meets competition.
+Built with Next.js, Socket.IO, Supabase, and Piston.
+**PSGMX Arena** - Where learning meets competition.

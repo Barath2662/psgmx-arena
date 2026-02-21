@@ -1,49 +1,38 @@
 version: '3.8'
 
+# PSGMX Arena - Docker Compose (Supabase mode)
+# Database and Auth are handled by Supabase (remote).
+# For local dev, just run: dev.bat  (or npm run dev + npm run socket:dev)
+
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: psgmx
-      POSTGRES_PASSWORD: psgmx_secret
-      POSTGRES_DB: psgmx_arena
-    ports:
-      - '5432:5432'
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U psgmx -d psgmx_arena']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Piston Code Execution Engine
+  # ─── Piston Code Execution Engine ───────────────────────
+  # Self-hosted sandboxed code runner (FREE, unlimited, open-source)
+  # Supports C, C++, Java, Python, JavaScript, TypeScript, Go, Rust, Ruby, PHP
+  # Handles 120+ concurrent executions with the resource limits below
   piston:
     image: ghcr.io/engineer-man/piston:latest
     restart: unless-stopped
     ports:
       - '2000:2000'
     tmpfs:
-      - /piston/jobs:exec,size=256M
+      - /piston/jobs:exec,size=512M
     privileged: true
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '2.0'
+          memory: 2G
+    environment:
+      - PISTON_RUN_TIMEOUT=10000
+      - PISTON_COMPILE_TIMEOUT=10000
+      - PISTON_OUTPUT_MAX_SIZE=65536
+      - PISTON_MAX_PROCESS_COUNT=128
+      - PISTON_MAX_OPEN_FILES=2048
 
-  # Next.js App
+  # Next.js App (Client)
   app:
     build:
       context: .
@@ -51,20 +40,11 @@ services:
     restart: unless-stopped
     ports:
       - '3000:3000'
-    environment:
-      DATABASE_URL: postgresql://psgmx:psgmx_secret@postgres:5432/psgmx_arena
-      REDIS_URL: redis://redis:6379
-      NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: your-nextauth-secret-change-in-production
-      NEXT_PUBLIC_SOCKET_URL: http://localhost:3001
-      PISTON_API_URL: http://piston:2000
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    env_file:
+      - .env
+    depends_on: []
 
-  # Socket.io Server
+  # Socket.IO Server
   socket:
     build:
       context: .
@@ -72,17 +52,8 @@ services:
     restart: unless-stopped
     ports:
       - '3001:3001'
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql://psgmx:psgmx_secret@postgres:5432/psgmx_arena
-      REDIS_URL: redis://redis:6379
-      PORT: 3001
-      CORS_ORIGIN: http://localhost:3000
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-volumes:
-  postgres_data:
-  redis_data:
+      WS_PORT: 3001
+    depends_on: []

@@ -101,7 +101,7 @@ function AdminDashboard() {
                     <div>
                       <p className="font-medium">{s.quiz?.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        {s._count?.participants} participants
+                        {s.participants?.length ?? '—'} participants
                       </p>
                     </div>
                     <Badge variant={s.state === 'COMPLETED' ? 'secondary' : 'success'}>
@@ -226,7 +226,7 @@ function InstructorDashboard() {
         />
         <StatCard
           title="Total Participants"
-          value={sessions.reduce((sum: number, s: any) => sum + (s._count?.participants || 0), 0)}
+          value={sessions.reduce((sum: number, s: any) => sum + (s.participants?.length || 0), 0)}
           icon={<Users className="h-5 w-5" />}
           description="Across all sessions"
           gradient="from-purple-500/10 to-pink-500/10"
@@ -253,7 +253,7 @@ function InstructorDashboard() {
                       <div>
                         <p className="font-medium">{q.title}</p>
                         <p className="text-sm text-muted-foreground">
-                          {q._count?.questions} questions
+                          {q.questions?.length ?? '—'} questions
                         </p>
                       </div>
                       <Badge variant={q.status === 'PUBLISHED' ? 'success' : 'secondary'}>
@@ -292,7 +292,7 @@ function InstructorDashboard() {
                     <div>
                       <p className="font-medium">{s.quiz?.title}</p>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Users className="h-3 w-3" /> {s._count?.participants}
+                        <Users className="h-3 w-3" /> {s.participants?.length ?? '—'}
                         <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{s.joinCode}</span>
                       </div>
                     </div>

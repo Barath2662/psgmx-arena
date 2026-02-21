@@ -31,6 +31,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
+    console.log('🔌 Connecting to WebSocket server:', wsUrl);
     
     const socket: ArenaSocket = io(wsUrl, {
       transports: ['websocket', 'polling'],

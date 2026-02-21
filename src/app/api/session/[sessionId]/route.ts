@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, canManageQuizzes } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-import { getLeaderboard } from '@/lib/redis';
+import { db, Tables } from '@/lib/db';
 
 // GET /api/session/[sessionId]
 export async function GET(
@@ -9,52 +8,38 @@ export async function GET(
   { params }: { params: { sessionId: string } }
 ) {
   try {
-    const quizSession = await prisma.quizSession.findUnique({
-      where: { id: params.sessionId },
-      include: {
-        quiz: {
-          include: {
-            questions: {
-              orderBy: { order: 'asc' },
-              select: {
-                id: true,
-                type: true,
-                title: true,
-                description: true,
-                mediaUrl: true,
-                points: true,
-                timeLimit: true,
-                optionsData: true,
-                order: true,
-                // Don't send correctAnswer to students during live quiz
-              },
-            },
-          },
-        },
-        participants: {
-          select: {
-            id: true,
-            userId: true,
-            guestName: true,
-            guestId: true,
-            totalScore: true,
-            correctCount: true,
-            streak: true,
-            rank: true,
-            isConnected: true,
-            joinedAt: true,
-            user: { select: { name: true, image: true } },
-          },
-          orderBy: { totalScore: 'desc' },
-        },
-        questions: {
-          orderBy: { order: 'asc' },
-          include: { question: true },
-        },
-      },
-    });
+    // Fetch session with quiz, questions, participants
+    const { data: quizSession, error } = await db
+      .from(Tables.quiz_sessions)
+      .select(`
+        *,
+        quiz:quizzes(
+          *,
+          questions(id, type, title, description, mediaUrl, points, timeLimit, optionsData, "order")
+        ),
+        participants:session_participants(
+          id, userId, guestName, guestId, totalScore, correctCount, streak, rank, isConnected, joinedAt,
+          user:users(name, image)
+        ),
+        session_questions(*, question:questions(*))
+      `)
+      .eq('id', params.sessionId)
+      .single();
 
-    if (!quizSession) {
+    // Sort in-memory since nested referencedTable ordering can fail in PostgREST
+    if (quizSession) {
+      if (quizSession.quiz?.questions) {
+        quizSession.quiz.questions.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+      }
+      if (quizSession.participants) {
+        quizSession.participants.sort((a: any, b: any) => (b.totalScore ?? 0) - (a.totalScore ?? 0));
+      }
+      if (quizSession.session_questions) {
+        quizSession.session_questions.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+      }
+    }
+
+    if (error || !quizSession) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
@@ -63,9 +48,8 @@ export async function GET(
     const isManager = user ? canManageQuizzes(user.role) : false;
 
     if (!isManager && quizSession.state !== 'COMPLETED') {
-      quizSession.quiz.questions = quizSession.quiz.questions.map((q: any) => {
+      quizSession.quiz.questions = (quizSession.quiz.questions || []).map((q: any) => {
         const sanitized = { ...q, optionsData: q.optionsData as any };
-        // Remove isCorrect from options
         if (sanitized.optionsData?.options) {
           sanitized.optionsData = {
             ...sanitized.optionsData,

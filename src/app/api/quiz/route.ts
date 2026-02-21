@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, canManageQuizzes, isAdminRole } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables, generateId } from '@/lib/db';
 import { createQuizSchema } from '@/lib/validations';
 
 // GET /api/quiz - List quizzes for current user
@@ -15,34 +15,27 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get('status');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
+    const offset = (page - 1) * limit;
 
-    const where: any = {};
+    let query = db
+      .from(Tables.quizzes)
+      .select('*, instructor:users(id, name, email), questions(id)', { count: 'exact' })
+      .order('updatedAt', { ascending: false })
+      .range(offset, offset + limit - 1);
 
-    // Non-admin roles only see their own quizzes
     if (!isAdminRole(user.role)) {
-      where.instructorId = user.id;
+      query = query.eq('instructorId', user.id);
     }
-
     if (status) {
-      where.status = status;
+      query = query.eq('status', status);
     }
 
-    const [quizzes, total] = await Promise.all([
-      prisma.quiz.findMany({
-        where,
-        include: {
-          _count: { select: { questions: true, sessions: true } },
-          instructor: { select: { id: true, name: true, email: true } },
-        },
-        orderBy: { updatedAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      prisma.quiz.count({ where }),
-    ]);
+    const { data: quizzes, count, error } = await query;
+    if (error) throw error;
 
+    const total = count || 0;
     return NextResponse.json({
-      quizzes,
+      quizzes: quizzes || [],
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
@@ -58,14 +51,12 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
     if (!canManageQuizzes(user.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const body = await req.json();
     const validation = createQuizSchema.safeParse(body);
-
     if (!validation.success) {
       return NextResponse.json(
         { error: validation.error.errors[0].message },
@@ -75,18 +66,20 @@ export async function POST(req: NextRequest) {
 
     const { scheduledStartTime, scheduledEndTime, ...quizData } = validation.data;
 
-    const quiz = await prisma.quiz.create({
-      data: {
+    const { data: quiz, error } = await db
+      .from(Tables.quizzes)
+      .insert({
+        id: generateId(),
         ...quizData,
-        scheduledStartTime: scheduledStartTime ? new Date(scheduledStartTime) : null,
-        scheduledEndTime: scheduledEndTime ? new Date(scheduledEndTime) : null,
+        scheduledStartTime: scheduledStartTime || null,
+        scheduledEndTime: scheduledEndTime || null,
         instructorId: user.id,
-      },
-      include: {
-        _count: { select: { questions: true } },
-      },
-    });
+        updatedAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
+    if (error) throw error;
     return NextResponse.json({ quiz }, { status: 201 });
   } catch (error) {
     console.error('Error creating quiz:', error);

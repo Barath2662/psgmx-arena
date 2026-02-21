@@ -77,12 +77,14 @@ export default function HostSessionPage() {
   }, [socket, sessionId]);
 
   const startSession = useCallback(() => {
-    emit('START_SESSION', { sessionId });
-  }, [emit, sessionId]);
+    const timePerQuestion = session?.quiz?.timePerQuestion || 30;
+    emit('START_SESSION', { sessionId, timePerQuestion });
+  }, [emit, sessionId, session]);
 
   const nextQuestion = useCallback(() => {
-    emit('NEXT_QUESTION', { sessionId });
-  }, [emit, sessionId]);
+    const timePerQuestion = session?.quiz?.timePerQuestion || 30;
+    emit('NEXT_QUESTION', { sessionId, timePerQuestion });
+  }, [emit, sessionId, session]);
 
   const lockQuestion = useCallback(() => {
     emit('LOCK_QUESTION', { sessionId });
@@ -243,6 +245,24 @@ export default function HostSessionPage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Show CODE question info */}
+                {currentQuestion.type === 'CODE' && currentQuestion.optionsData && (
+                  <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">Language:</span>
+                      <Badge variant="outline">{currentQuestion.optionsData.language || 'python'}</Badge>
+                    </div>
+                    {currentQuestion.optionsData.testCases?.length > 0 && (
+                      <div className="text-sm text-muted-foreground">
+                        {currentQuestion.optionsData.testCases.length} test case(s) will be evaluated
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Students are coding and executing their solutions in the Monaco editor
+                    </p>
                   </div>
                 )}
 

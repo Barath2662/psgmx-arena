@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, isAdminRole } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables } from '@/lib/db';
 
 // GET /api/admin/analytics - Global analytics
 export async function GET(req: NextRequest) {
@@ -11,40 +11,36 @@ export async function GET(req: NextRequest) {
     }
 
     const [
-      totalUsers,
-      totalInstructors,
-      totalStudents,
-      totalQuizzes,
-      totalSessions,
-      totalParticipations,
-      recentSessions,
+      usersResult,
+      instructorsResult,
+      studentsResult,
+      quizzesResult,
+      sessionsResult,
+      participantsResult,
+      recentSessionsResult,
     ] = await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({ where: { role: 'INSTRUCTOR' } }),
-      prisma.user.count({ where: { role: 'STUDENT' } }),
-      prisma.quiz.count(),
-      prisma.quizSession.count(),
-      prisma.sessionParticipant.count(),
-      prisma.quizSession.findMany({
-        take: 10,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          quiz: { select: { title: true } },
-          _count: { select: { participants: true } },
-        },
-      }),
+      db.from(Tables.users).select('*', { count: 'exact', head: true }),
+      db.from(Tables.users).select('*', { count: 'exact', head: true }).eq('role', 'INSTRUCTOR'),
+      db.from(Tables.users).select('*', { count: 'exact', head: true }).eq('role', 'STUDENT'),
+      db.from(Tables.quizzes).select('*', { count: 'exact', head: true }),
+      db.from(Tables.quiz_sessions).select('*', { count: 'exact', head: true }),
+      db.from(Tables.session_participants).select('*', { count: 'exact', head: true }),
+      db.from(Tables.quiz_sessions)
+        .select('*, quiz:quizzes(title)')
+        .order('createdAt', { ascending: false })
+        .limit(10),
     ]);
 
     return NextResponse.json({
       stats: {
-        totalUsers,
-        totalInstructors,
-        totalStudents,
-        totalQuizzes,
-        totalSessions,
-        totalParticipations,
+        totalUsers: usersResult.count || 0,
+        totalInstructors: instructorsResult.count || 0,
+        totalStudents: studentsResult.count || 0,
+        totalQuizzes: quizzesResult.count || 0,
+        totalSessions: sessionsResult.count || 0,
+        totalParticipations: participantsResult.count || 0,
       },
-      recentSessions,
+      recentSessions: recentSessionsResult.data || [],
     });
   } catch (error) {
     console.error('Error fetching analytics:', error);

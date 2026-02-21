@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useSocket } from '@/components/providers/socket-provider';
 import { FullscreenGuard } from '@/components/fullscreen-guard';
+import CodeSandbox from '@/components/code-sandbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +40,7 @@ export default function PlaySessionPage() {
   const [score, setScore] = useState(0);
   const [rank, setRank] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [playerName, setPlayerName] = useState('');
   const [lastResult, setLastResult] = useState<{ correct: boolean; points: number } | null>(null);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,7 @@ export default function PlaySessionPage() {
   useEffect(() => {
     const pid = sessionStorage.getItem('participantId') || '';
     setParticipantId(pid);
+    setPlayerName(sessionStorage.getItem('participantName') || 'Player');
 
     fetch(`/api/session/${sessionId}`)
       .then((r) => r.json())
@@ -175,6 +178,7 @@ export default function PlaySessionPage() {
             <span className="font-medium text-sm truncate">{session.quiz?.title}</span>
           </div>
           <div className="flex items-center gap-4">
+            <span className="text-sm font-medium truncate max-w-[120px]">{playerName}</span>
             {streak > 1 && (
               <Badge variant="warning" className="flex items-center gap-1 animate-score-pop">
                 <Zap className="h-3 w-3" /> {streak} streak!
@@ -285,17 +289,15 @@ export default function PlaySessionPage() {
 
             {/* Code */}
             {currentQuestion.type === 'CODE' && (
-              <div className="text-center py-8">
-                <Code2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">
-                  Code editor opens below for this question type
-                </p>
-                <TextInputAnswer
-                  type="text"
-                  submitted={answerSubmitted}
-                  onSubmit={submitAnswer}
-                  placeholder="Paste your code solution..."
-                  multiline
+              <div className="space-y-4">
+                <CodeSandbox
+                  language={currentQuestion.optionsData?.language || 'python'}
+                  starterCode={currentQuestion.optionsData?.starterCode || ''}
+                  testCases={currentQuestion.optionsData?.testCases || []}
+                  readOnly={answerSubmitted}
+                  onSubmit={(code, language) => {
+                    submitAnswer({ code, language });
+                  }}
                 />
               </div>
             )}

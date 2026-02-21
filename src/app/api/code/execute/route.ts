@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeCodeSchema } from '@/lib/validations';
 
-const PISTON_URL = process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston';
+// Piston API endpoints – try local self-hosted first, then public fallback
+const PISTON_URLS = [
+  process.env.PISTON_API_URL,
+  'http://localhost:2000/api/v2',       // Local Docker Piston
+  'https://emkc.org/api/v2/piston',     // Public fallback (rate-limited)
+].filter(Boolean) as string[];
 
 // Language to Piston runtime mapping
 const LANGUAGE_MAP: Record<string, { language: string; version: string }> = {
@@ -17,6 +22,15 @@ const LANGUAGE_MAP: Record<string, { language: string; version: string }> = {
   ruby: { language: 'ruby', version: '3.0.1' },
   php: { language: 'php', version: '8.2.3' },
 };
+
+async function executePiston(url: string, payload: object): Promise<Response> {
+  return fetch(`${url}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000), // 15s total timeout
+  });
+}
 
 // POST /api/code/execute - Execute code in sandbox
 export async function POST(req: NextRequest) {
@@ -41,41 +55,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Execute via Piston API
-    const response = await fetch(`${PISTON_URL}/execute`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        language: runtime.language,
-        version: runtime.version,
-        files: [{ name: `main`, content: code }],
-        stdin: stdin || '',
-        run_timeout: 10000, // 10s max
-        compile_timeout: 10000,
-        compile_memory_limit: 256000000, // 256MB
-        run_memory_limit: 256000000,
-      }),
-    });
+    const payload = {
+      language: runtime.language,
+      version: runtime.version,
+      files: [{ name: 'main', content: code }],
+      stdin: stdin || '',
+      run_timeout: 10000,
+      compile_timeout: 10000,
+      compile_memory_limit: 256000000,
+      run_memory_limit: 256000000,
+    };
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Piston error:', errText);
-      return NextResponse.json(
-        { error: 'Code execution service unavailable' },
-        { status: 502 }
-      );
+    // Try each Piston URL until one works
+    let lastError = '';
+    for (const pistonUrl of PISTON_URLS) {
+      try {
+        const response = await executePiston(pistonUrl, payload);
+        if (response.ok) {
+          const result = await response.json();
+          return NextResponse.json({
+            output: result.run?.output || '',
+            stderr: result.run?.stderr || '',
+            exitCode: result.run?.code ?? -1,
+            signal: result.run?.signal || null,
+            compileOutput: result.compile?.output || '',
+            compileError: result.compile?.stderr || '',
+          });
+        }
+        lastError = await response.text();
+        console.warn(`Piston ${pistonUrl} returned ${response.status}:`, lastError);
+      } catch (err: any) {
+        lastError = err.message || 'Connection failed';
+        console.warn(`Piston ${pistonUrl} failed:`, lastError);
+      }
     }
 
-    const result = await response.json();
-
-    return NextResponse.json({
-      output: result.run?.output || '',
-      stderr: result.run?.stderr || '',
-      exitCode: result.run?.code ?? -1,
-      signal: result.run?.signal || null,
-      compileOutput: result.compile?.output || '',
-      compileError: result.compile?.stderr || '',
-    });
+    return NextResponse.json(
+      { error: `Code execution service unavailable. ${lastError}` },
+      { status: 502 }
+    );
   } catch (error) {
     console.error('Code execution error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -1,9 +1,16 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load .env from project root
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+
 import http from 'http';
 import { Server } from 'socket.io';
 import { setupSocketHandlers } from './handlers';
 import type { ServerToClientEvents, ClientToServerEvents } from '../src/types/socket';
 
 const PORT = parseInt(process.env.WS_PORT || '3001', 10);
+const CORS_ORIGIN = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 const httpServer = http.createServer((req, res) => {
   // Health check endpoint
@@ -18,7 +25,7 @@ const httpServer = http.createServer((req, res) => {
 
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: {
-    origin: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    origin: CORS_ORIGIN,
     methods: ['GET', 'POST'],
     credentials: true,
   },

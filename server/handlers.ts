@@ -73,11 +73,16 @@ export function setupSocketHandlers(
 
     // ─── INSTRUCTOR: START SESSION ─────────────────────────
 
-    socket.on('START_SESSION', async ({ sessionId }: { sessionId: string }) => {
+    socket.on('START_SESSION', async ({ sessionId, timePerQuestion }: { sessionId: string; timePerQuestion?: number }) => {
       const room = getSessionRoom(sessionId);
       
       await setSessionState(sessionId, 'QUESTION_ACTIVE');
       await redis.set(sessionKeys.currentQuestion(sessionId), '0');
+
+      // Start timer if timePerQuestion is provided
+      if (timePerQuestion && timePerQuestion > 0) {
+        await setTimer(sessionId, timePerQuestion);
+      }
 
       io.to(room).emit('SESSION_STATE_CHANGE', {
         state: 'QUESTION_ACTIVE',
@@ -87,13 +92,18 @@ export function setupSocketHandlers(
 
     // ─── INSTRUCTOR: NEXT QUESTION ─────────────────────────
 
-    socket.on('NEXT_QUESTION', async ({ sessionId }: { sessionId: string }) => {
+    socket.on('NEXT_QUESTION', async ({ sessionId, timePerQuestion }: { sessionId: string; timePerQuestion?: number }) => {
       const room = getSessionRoom(sessionId);
       const currentStr = await redis.get(sessionKeys.currentQuestion(sessionId));
       const next = (parseInt(currentStr || '0', 10)) + 1;
 
       await redis.set(sessionKeys.currentQuestion(sessionId), next.toString());
       await setSessionState(sessionId, 'QUESTION_ACTIVE');
+
+      // Start timer for next question
+      if (timePerQuestion && timePerQuestion > 0) {
+        await setTimer(sessionId, timePerQuestion);
+      }
 
       io.to(room).emit('SESSION_STATE_CHANGE', {
         state: 'QUESTION_ACTIVE',

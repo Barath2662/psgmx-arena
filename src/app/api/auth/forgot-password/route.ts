@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { db, Tables, generateId } from '@/lib/db';
 
 // POST /api/auth/forgot-password - Submit a password reset request
 export async function POST(req: NextRequest) {
@@ -11,9 +11,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Find user by email
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    const { data: user } = await db
+      .from(Tables.users)
+      .select('id')
+      .eq('email', email)
+      .single();
 
     if (!user) {
       // Don't reveal if the email exists or not (security)
@@ -21,12 +23,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Check for existing pending request
-    const existingRequest = await prisma.passwordResetRequest.findFirst({
-      where: {
-        userId: user.id,
-        status: 'PENDING',
-      },
-    });
+    const { data: existingRequest } = await db
+      .from(Tables.password_reset_requests)
+      .select('id')
+      .eq('userId', user.id)
+      .eq('status', 'PENDING')
+      .limit(1)
+      .single();
 
     if (existingRequest) {
       return NextResponse.json({
@@ -36,12 +39,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Create password reset request
-    await prisma.passwordResetRequest.create({
-      data: {
+    const { error } = await db
+      .from(Tables.password_reset_requests)
+      .insert({
+        id: generateId(),
         userId: user.id,
         status: 'PENDING',
-      },
-    });
+      });
+
+    if (error) throw error;
 
     return NextResponse.json({
       success: true,

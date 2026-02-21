@@ -12,6 +12,7 @@ interface AuthUser {
   role: string;
   supabaseId: string;
   mustChangePassword: boolean;
+  registerNumber: string | null;
 }
 
 interface AuthContextType {

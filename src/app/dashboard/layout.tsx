@@ -32,7 +32,6 @@ const roleNavItems: Record<string, Array<{ href: string; label: string; icon: Re
     { href: '/dashboard/sessions', label: 'Sessions', icon: <Play className="h-4 w-4" /> },
     { href: '/dashboard/analytics', label: 'Analytics', icon: <BarChart3 className="h-4 w-4" /> },
     { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: <Trophy className="h-4 w-4" /> },
-    { href: '/dashboard/reports', label: 'Reports', icon: <Shield className="h-4 w-4" /> },
   ],
   INSTRUCTOR: [
     { href: '/dashboard', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -43,9 +42,7 @@ const roleNavItems: Record<string, Array<{ href: string; label: string; icon: Re
   ],
   STUDENT: [
     { href: '/dashboard', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { href: '/dashboard/history', label: 'Quiz History', icon: <BookOpen className="h-4 w-4" /> },
     { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: <Trophy className="h-4 w-4" /> },
-    { href: '/dashboard/results', label: 'My Results', icon: <BarChart3 className="h-4 w-4" /> },
   ],
 };
 

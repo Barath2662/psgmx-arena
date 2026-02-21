@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables, generateId } from '@/lib/db';
 import { joinSessionSchema } from '@/lib/validations';
 import { nanoid } from 'nanoid';
 
@@ -22,12 +22,11 @@ export async function POST(req: NextRequest) {
     const { joinCode, guestName } = validation.data;
 
     // Find session
-    const quizSession = await prisma.quizSession.findUnique({
-      where: { joinCode: joinCode.toUpperCase() },
-      include: {
-        quiz: { select: { id: true, title: true, mode: true } },
-      },
-    });
+    const { data: quizSession } = await db
+      .from(Tables.quiz_sessions)
+      .select('*, quiz:quizzes(id, title, mode)')
+      .eq('joinCode', joinCode.toUpperCase())
+      .single();
 
     if (!quizSession) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
@@ -45,6 +44,14 @@ export async function POST(req: NextRequest) {
     const user = await getAuthUser();
     const userId = user?.id;
 
+    // If logged-in user provided a guestName, update their DB name
+    if (userId && guestName && guestName !== user?.name) {
+      await db
+        .from(Tables.users)
+        .update({ name: guestName })
+        .eq('id', userId);
+    }
+
     // Guest or authenticated join
     if (!userId && !quizSession.guestMode) {
       return NextResponse.json({ error: 'Guest mode is not enabled. Please log in.' }, { status: 401 });
@@ -55,45 +62,66 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if already joined
-    let participant;
+    let participant: any;
 
     if (userId) {
-      participant = await prisma.sessionParticipant.findUnique({
-        where: { sessionId_userId: { sessionId: quizSession.id, userId } },
-      });
+      const { data: existing } = await db
+        .from(Tables.session_participants)
+        .select('*')
+        .eq('sessionId', quizSession.id)
+        .eq('userId', userId)
+        .single();
 
-      if (!participant) {
-        participant = await prisma.sessionParticipant.create({
-          data: {
+      if (!existing) {
+        const { data: created, error } = await db
+          .from(Tables.session_participants)
+          .insert({
+            id: generateId(),
             sessionId: quizSession.id,
             userId,
-          },
-        });
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        participant = created;
       } else {
         // Reconnect
-        participant = await prisma.sessionParticipant.update({
-          where: { id: participant.id },
-          data: { isConnected: true },
-        });
+        const { data: updated, error } = await db
+          .from(Tables.session_participants)
+          .update({ isConnected: true })
+          .eq('id', existing.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        participant = updated;
       }
     } else {
       // Guest join
       const guestId = guestIdGen();
-      participant = await prisma.sessionParticipant.create({
-        data: {
+      const { data: created, error } = await db
+        .from(Tables.session_participants)
+        .insert({
+          id: generateId(),
           sessionId: quizSession.id,
           guestName,
           guestId,
-        },
-      });
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      participant = created;
     }
 
     return NextResponse.json({
       session: quizSession,
       participant: {
         id: participant.id,
-        guestId: (participant as any).guestId,
-        name: (participant as any).guestName || user?.name,
+        guestId: participant.guestId,
+        name: participant.guestName || user?.name || 'Player',
+        registerNumber: user?.registerNumber || null,
       },
     });
   } catch (error) {

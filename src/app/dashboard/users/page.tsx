@@ -13,6 +13,7 @@ import {
   XCircle,
   Clock,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,8 +34,9 @@ interface UserData {
   name: string | null;
   email: string;
   role: string;
+  registerNumber: string | null;
   createdAt: string;
-  _count: { quizzes: number; participants: number };
+  _count?: { quizzes: number; participants: number };
 }
 
 interface PasswordResetRequest {
@@ -57,6 +59,7 @@ export default function ManageUsersPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
+  const [newRegisterNumber, setNewRegisterNumber] = useState('');
   const [newRole, setNewRole] = useState('STUDENT');
   const [creating, setCreating] = useState(false);
 
@@ -108,14 +111,26 @@ export default function ManageUsersPage() {
 
   async function handleCreateUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!newEmail) return;
+    if (newRole === 'STUDENT' && !newRegisterNumber) {
+      toast.error('Register number is required for students');
+      return;
+    }
+    if (newRole !== 'STUDENT' && !newEmail) {
+      toast.error('Email is required for admin/instructor');
+      return;
+    }
     setCreating(true);
 
     try {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: newEmail, name: newName, role: newRole }),
+        body: JSON.stringify({
+          email: newRole !== 'STUDENT' ? newEmail : undefined,
+          name: newName,
+          role: newRole,
+          registerNumber: newRegisterNumber || undefined,
+        }),
       });
 
       const data = await res.json();
@@ -125,9 +140,11 @@ export default function ManageUsersPage() {
         return;
       }
 
-      toast.success(`User ${newEmail} created with default password`);
+      const displayId = newRole === 'STUDENT' ? newRegisterNumber : newEmail;
+      toast.success(`User ${displayId} created with default password`);
       setNewEmail('');
       setNewName('');
+      setNewRegisterNumber('');
       setNewRole('STUDENT');
       setShowCreateForm(false);
       fetchUsers();
@@ -157,6 +174,30 @@ export default function ManageUsersPage() {
       fetchResetRequests();
     } catch {
       toast.error('Failed to process request');
+    }
+  }
+
+  async function handleDeleteUser(userId: string, email: string) {
+    if (!confirm(`Are you sure you want to delete ${email}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users?userId=${userId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to delete user');
+        return;
+      }
+
+      toast.success('User deleted successfully');
+      fetchUsers();
+    } catch {
+      toast.error('Failed to delete user');
     }
   }
 
@@ -231,32 +272,13 @@ export default function ManageUsersPage() {
           <CardHeader>
             <CardTitle className="text-lg">Create New User</CardTitle>
             <CardDescription>
-              User will be created with default password: <code className="font-bold">Psgmx123</code>
+              Default passwords — Student: <code className="font-bold">register number</code>,
+              Admin: <code className="font-bold">admin@123</code>,
+              Instructor: <code className="font-bold">instruct@123</code>
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreateUser} className="flex flex-wrap gap-4 items-end">
-              <div className="space-y-2 flex-1 min-w-[200px]">
-                <Label htmlFor="newEmail">Email *</Label>
-                <Input
-                  id="newEmail"
-                  type="email"
-                  placeholder="user@college.edu"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2 flex-1 min-w-[200px]">
-                <Label htmlFor="newName">Name</Label>
-                <Input
-                  id="newName"
-                  type="text"
-                  placeholder="Full Name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                />
-              </div>
               <div className="space-y-2 w-[150px]">
                 <Label>Role</Label>
                 <Select value={newRole} onValueChange={setNewRole}>
@@ -269,6 +291,40 @@ export default function ManageUsersPage() {
                     <SelectItem value="ADMIN">Admin</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2 flex-1 min-w-[160px]">
+                <Label htmlFor="newRegNo">Register No. {newRole === 'STUDENT' ? '*' : ''}</Label>
+                <Input
+                  id="newRegNo"
+                  type="text"
+                  placeholder="e.g. 25MX101"
+                  value={newRegisterNumber}
+                  onChange={(e) => setNewRegisterNumber(e.target.value.toUpperCase())}
+                  required={newRole === 'STUDENT'}
+                />
+              </div>
+              {newRole !== 'STUDENT' && (
+                <div className="space-y-2 flex-1 min-w-[200px]">
+                  <Label htmlFor="newEmail">Email *</Label>
+                  <Input
+                    id="newEmail"
+                    type="email"
+                    placeholder="user@college.edu"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
+              <div className="space-y-2 flex-1 min-w-[200px]">
+                <Label htmlFor="newName">Name</Label>
+                <Input
+                  id="newName"
+                  type="text"
+                  placeholder="Full Name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
               </div>
               <Button type="submit" variant="arena" disabled={creating}>
                 {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
@@ -347,7 +403,7 @@ export default function ManageUsersPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by name or email..."
+                  placeholder="Search by name, email or register no..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-10"
@@ -379,17 +435,18 @@ export default function ManageUsersPage() {
                   <thead>
                     <tr className="border-b text-left">
                       <th className="pb-3 font-medium">Name</th>
+                      <th className="pb-3 font-medium">Reg. No.</th>
                       <th className="pb-3 font-medium">Email</th>
                       <th className="pb-3 font-medium">Role</th>
-                      <th className="pb-3 font-medium">Quizzes</th>
-                      <th className="pb-3 font-medium">Participated</th>
                       <th className="pb-3 font-medium">Joined</th>
+                      <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {users.map((u) => (
                       <tr key={u.id} className="border-b last:border-0">
                         <td className="py-3 font-medium">{u.name || '—'}</td>
+                        <td className="py-3 text-sm font-mono text-muted-foreground">{u.registerNumber || '—'}</td>
                         <td className="py-3 text-sm text-muted-foreground">{u.email}</td>
                         <td className="py-3">
                           <Select
@@ -406,10 +463,20 @@ export default function ManageUsersPage() {
                             </SelectContent>
                           </Select>
                         </td>
-                        <td className="py-3 text-sm">{u._count.quizzes}</td>
-                        <td className="py-3 text-sm">{u._count.participants}</td>
                         <td className="py-3 text-sm text-muted-foreground">
                           {new Date(u.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="py-3">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                            onClick={() => handleDeleteUser(u.id, u.email)}
+                            disabled={u.id === user?.id}
+                            title={u.id === user?.id ? 'Cannot delete yourself' : 'Delete user'}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </td>
                       </tr>
                     ))}

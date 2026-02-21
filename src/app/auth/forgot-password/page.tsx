@@ -2,24 +2,37 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Zap, Loader2, Mail, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Zap, Loader2, User, ArrowLeft, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import toast from 'react-hot-toast';
 
+/** Check if input is a register number (e.g. 25MX103) */
+function isRegisterNumber(input: string): boolean {
+  return /^\d{2}MX\d{3}$/i.test(input.trim());
+}
+
+/** Convert register number to synthetic email */
+function toSyntheticEmail(regNo: string): string {
+  return `${regNo.toLowerCase()}@student.psgmx`;
+}
+
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email) return;
+    const input = identifier.trim();
+    if (!input) return;
     setLoading(true);
 
     try {
+      const email = isRegisterNumber(input) ? toSyntheticEmail(input) : input;
+
       const res = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -55,7 +68,7 @@ export default function ForgotPasswordPage() {
           <CardDescription>
             {submitted
               ? 'Your request has been sent to the admin'
-              : 'Enter your email and we\'ll send a reset request to the admin'}
+              : 'Enter your email or register number to request a password reset'}
           </CardDescription>
         </CardHeader>
 
@@ -79,15 +92,15 @@ export default function ForgotPasswordPage() {
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className="flex items-center gap-2">
-                  <Mail className="h-4 w-4" /> Email Address
+                <Label htmlFor="identifier" className="flex items-center gap-2">
+                  <User className="h-4 w-4" /> Email or Register Number
                 </Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="yourname@college.edu"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="identifier"
+                  type="text"
+                  placeholder="25MX103 or admin@email.com"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   required
                   autoFocus
                   className="h-12 text-base"
@@ -96,7 +109,7 @@ export default function ForgotPasswordPage() {
             </CardContent>
             <CardFooter className="flex flex-col gap-3">
               <Button type="submit" className="w-full h-12 text-base" variant="arena" disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Mail className="mr-2 h-5 w-5" />}
+                {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <User className="mr-2 h-5 w-5" />}
                 Submit Reset Request
               </Button>
               <Link

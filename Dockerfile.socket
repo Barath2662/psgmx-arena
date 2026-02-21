@@ -9,8 +9,9 @@ RUN npx prisma generate
 
 COPY server ./server
 COPY src/types ./src/types
-COPY src/lib/utils.ts ./src/lib/utils.ts
+COPY src/lib ./src/lib
 COPY tsconfig.server.json ./
+COPY .env ./.env
 
 EXPOSE 3001
 

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase-server';
-import { prisma } from '@/lib/prisma';
+import { db, Tables, generateId } from '@/lib/db';
 
 export type UserRole = 'ADMIN' | 'INSTRUCTOR' | 'STUDENT';
 
@@ -10,10 +10,11 @@ export interface AuthUser {
   role: UserRole;
   supabaseId: string;
   mustChangePassword: boolean;
+  registerNumber: string | null;
 }
 
 /**
- * Get the current authenticated user from Supabase + local DB.
+ * Get the current authenticated user from Supabase Auth + DB.
  * Call this in API routes and Server Components.
  */
 export async function getAuthUser(): Promise<AuthUser | null> {
@@ -25,26 +26,40 @@ export async function getAuthUser(): Promise<AuthUser | null> {
 
     if (!supabaseUser?.email) return null;
 
-    // Find or create user in our DB
-    let user = await prisma.user.findUnique({
-      where: { email: supabaseUser.email },
-    });
+    // Find user in our DB
+    let { data: user, error } = await db
+      .from(Tables.users)
+      .select('*')
+      .eq('email', supabaseUser.email)
+      .single();
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
+    if (error || !user) {
+      // Create user on first login
+      const { data: newUser, error: createError } = await db
+        .from(Tables.users)
+        .insert({
+          id: generateId(),
           email: supabaseUser.email,
           supabaseId: supabaseUser.id,
           name: supabaseUser.user_metadata?.name || supabaseUser.email.split('@')[0],
           role: 'STUDENT',
           mustChangePassword: true,
-        },
-      });
+          updatedAt: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (createError || !newUser) return null;
+      user = newUser;
     } else if (!user.supabaseId) {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { supabaseId: supabaseUser.id },
-      });
+      // Link Supabase ID if missing
+      const { data: updated } = await db
+        .from(Tables.users)
+        .update({ supabaseId: supabaseUser.id })
+        .eq('id', user.id)
+        .select()
+        .single();
+      if (updated) user = updated;
     }
 
     return {
@@ -54,6 +69,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       role: user.role as UserRole,
       supabaseId: user.supabaseId || supabaseUser.id,
       mustChangePassword: user.mustChangePassword,
+      registerNumber: user.registerNumber || null,
     };
   } catch {
     return null;

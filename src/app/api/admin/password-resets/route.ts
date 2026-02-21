@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, isAdminRole } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables } from '@/lib/db';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 const DEFAULT_PASSWORD = 'Psgmx123';
@@ -16,17 +16,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status') || 'PENDING';
 
-    const requests = await prisma.passwordResetRequest.findMany({
-      where: { status },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const { data: requests, error } = await db
+      .from(Tables.password_reset_requests)
+      .select('*, user:users(id, name, email, role)')
+      .eq('status', status)
+      .order('createdAt', { ascending: false });
 
-    return NextResponse.json({ requests });
+    if (error) throw error;
+    return NextResponse.json({ requests: requests || [] });
   } catch (error) {
     console.error('Error fetching password reset requests:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -52,10 +49,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Find the reset request
-    const resetRequest = await prisma.passwordResetRequest.findUnique({
-      where: { id: requestId },
-      include: { user: true },
-    });
+    const { data: resetRequest } = await db
+      .from(Tables.password_reset_requests)
+      .select('*, user:users(*)')
+      .eq('id', requestId)
+      .single();
 
     if (!resetRequest) {
       return NextResponse.json({ error: 'Reset request not found' }, { status: 404 });
@@ -67,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'APPROVED') {
       // Reset password in Supabase to default
-      if (resetRequest.user.supabaseId) {
+      if (resetRequest.user?.supabaseId) {
         const supabaseAdmin = createAdminClient();
         const { error: supabaseError } = await supabaseAdmin.auth.admin.updateUserById(
           resetRequest.user.supabaseId,
@@ -81,21 +79,23 @@ export async function POST(req: NextRequest) {
       }
 
       // Set mustChangePassword = true
-      await prisma.user.update({
-        where: { id: resetRequest.userId },
-        data: { mustChangePassword: true },
-      });
+      await db
+        .from(Tables.users)
+        .update({ mustChangePassword: true })
+        .eq('id', resetRequest.userId);
     }
 
     // Update the request status
-    await prisma.passwordResetRequest.update({
-      where: { id: requestId },
-      data: {
+    const { error } = await db
+      .from(Tables.password_reset_requests)
+      .update({
         status: action,
-        resolvedAt: new Date(),
+        resolvedAt: new Date().toISOString(),
         resolvedBy: user.id,
-      },
-    });
+      })
+      .eq('id', requestId);
+
+    if (error) throw error;
 
     return NextResponse.json({
       success: true,

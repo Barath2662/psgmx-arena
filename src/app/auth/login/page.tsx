@@ -4,26 +4,42 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
-import { Zap, Loader2, Mail, Lock, LogIn } from 'lucide-react';
+import { Zap, Loader2, User, Lock, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import toast from 'react-hot-toast';
 
+/** Check if input is a register number (e.g. 25MX103) */
+function isRegisterNumber(input: string): boolean {
+  return /^\d{2}MX\d{3}$/i.test(input.trim());
+}
+
+/** Convert register number to synthetic email for Supabase Auth */
+function toSyntheticEmail(regNo: string): string {
+  return `${regNo.toLowerCase()}@student.psgmx`;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!email || !password) return;
+    const input = identifier.trim();
+    if (!input || !password) return;
     setLoading(true);
 
     try {
+      // If input looks like a register number, convert to synthetic email
+      const email = isRegisterNumber(input)
+        ? toSyntheticEmail(input)
+        : input;
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -69,22 +85,22 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-2xl font-bold">PSGMX Arena</CardTitle>
           <CardDescription>
-            Sign in with your credentials
+            Sign in with your email or register number
           </CardDescription>
         </CardHeader>
 
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email" className="flex items-center gap-2">
-                <Mail className="h-4 w-4" /> Email Address
+              <Label htmlFor="identifier" className="flex items-center gap-2">
+                <User className="h-4 w-4" /> Email or Register Number
               </Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="yourname@college.edu"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="identifier"
+                type="text"
+                placeholder="25MX103 or admin@email.com"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 required
                 autoFocus
                 className="h-12 text-base"

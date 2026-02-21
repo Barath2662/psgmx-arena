@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, isAdminRole } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables, generateId } from '@/lib/db';
 import { createQuestionSchema } from '@/lib/validations';
 
 // GET /api/quiz/[quizId]/questions
@@ -14,15 +14,15 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const questions = await prisma.question.findMany({
-      where: { quizId: params.quizId, parentId: null },
-      orderBy: { order: 'asc' },
-      include: {
-        subQuestions: { orderBy: { order: 'asc' } },
-      },
-    });
+    const { data: questions, error } = await db
+      .from(Tables.questions)
+      .select('*')
+      .eq('quizId', params.quizId)
+      .is('parentId', null)
+      .order('order', { ascending: true });
 
-    return NextResponse.json({ questions });
+    if (error) throw error;
+    return NextResponse.json({ questions: questions || [] });
   } catch (error) {
     console.error('Error fetching questions:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -41,7 +41,12 @@ export async function POST(
     }
 
     // Verify quiz ownership
-    const quiz = await prisma.quiz.findUnique({ where: { id: params.quizId } });
+    const { data: quiz } = await db
+      .from(Tables.quizzes)
+      .select('id, instructorId')
+      .eq('id', params.quizId)
+      .single();
+
     if (!quiz) {
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
@@ -60,20 +65,30 @@ export async function POST(
     }
 
     // Get next order index
-    const lastQuestion = await prisma.question.findFirst({
-      where: { quizId: params.quizId, parentId: null },
-      orderBy: { order: 'desc' },
-    });
+    const { data: lastQuestion } = await db
+      .from(Tables.questions)
+      .select('order')
+      .eq('quizId', params.quizId)
+      .is('parentId', null)
+      .order('order', { ascending: false })
+      .limit(1)
+      .single();
+
     const nextOrder = (lastQuestion?.order ?? -1) + 1;
 
-    const question = await prisma.question.create({
-      data: {
+    const { data: question, error } = await db
+      .from(Tables.questions)
+      .insert({
+        id: generateId(),
         ...validation.data,
         quizId: params.quizId,
         order: nextOrder,
-      },
-    });
+        updatedAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
+    if (error) throw error;
     return NextResponse.json({ question }, { status: 201 });
   } catch (error) {
     console.error('Error creating question:', error);
@@ -92,7 +107,12 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const quiz = await prisma.quiz.findUnique({ where: { id: params.quizId } });
+    const { data: quiz } = await db
+      .from(Tables.quizzes)
+      .select('id, instructorId')
+      .eq('id', params.quizId)
+      .single();
+
     if (!quiz || (quiz.instructorId !== user.id && !isAdminRole(user.role))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -104,19 +124,61 @@ export async function PUT(
       return NextResponse.json({ error: 'questionIds must be an array' }, { status: 400 });
     }
 
-    // Update order in a transaction
-    await prisma.$transaction(
-      questionIds.map((id, index) =>
-        prisma.question.update({
-          where: { id },
-          data: { order: index },
-        })
-      )
-    );
+    // Update order sequentially (no transaction in Supabase client)
+    for (let i = 0; i < questionIds.length; i++) {
+      const { error } = await db
+        .from(Tables.questions)
+        .update({ order: i })
+        .eq('id', questionIds[i]);
+
+      if (error) throw error;
+    }
 
     return NextResponse.json({ message: 'Questions reordered' });
   } catch (error) {
     console.error('Error reordering questions:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// DELETE /api/quiz/[quizId]/questions - Delete a question
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { quizId: string } }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: quiz } = await db
+      .from(Tables.quizzes)
+      .select('id, instructorId')
+      .eq('id', params.quizId)
+      .single();
+
+    if (!quiz || (quiz.instructorId !== user.id && !isAdminRole(user.role))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const questionId = searchParams.get('questionId');
+
+    if (!questionId) {
+      return NextResponse.json({ error: 'questionId is required' }, { status: 400 });
+    }
+
+    const { error } = await db
+      .from(Tables.questions)
+      .delete()
+      .eq('id', questionId)
+      .eq('quizId', params.quizId);
+
+    if (error) throw error;
+    return NextResponse.json({ message: 'Question deleted' });
+  } catch (error) {
+    console.error('Error deleting question:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

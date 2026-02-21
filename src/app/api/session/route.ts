@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, canManageQuizzes, isAdminRole } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables, generateId } from '@/lib/db';
 import { generateJoinCode } from '@/lib/utils';
-import { setSessionState, sessionKeys } from '@/lib/redis';
-import { createSessionSchema, joinSessionSchema } from '@/lib/validations';
+import { setSessionState } from '@/lib/redis';
+import { createSessionSchema } from '@/lib/validations';
 
 // GET /api/session - List sessions
 export async function GET(req: NextRequest) {
@@ -17,26 +17,33 @@ export async function GET(req: NextRequest) {
     const quizId = searchParams.get('quizId');
     const state = searchParams.get('state');
 
-    const where: any = {};
+    let query = db
+      .from(Tables.quiz_sessions)
+      .select('*, quiz:quizzes(id, title, mode), participants:session_participants(id)')
+      .order('createdAt', { ascending: false })
+      .limit(50);
 
     if (!isAdminRole(user.role)) {
-      where.quiz = { instructorId: user.id };
+      // Filter to sessions whose quiz belongs to this user
+      // We'll do a two-step: get user's quiz IDs first
+      const { data: userQuizzes } = await db
+        .from(Tables.quizzes)
+        .select('id')
+        .eq('instructorId', user.id);
+      const quizIds = (userQuizzes || []).map((q: any) => q.id);
+      if (quizIds.length === 0) {
+        return NextResponse.json({ sessions: [] });
+      }
+      query = query.in('quizId', quizIds);
     }
 
-    if (quizId) where.quizId = quizId;
-    if (state) where.state = state;
+    if (quizId) query = query.eq('quizId', quizId);
+    if (state) query = query.eq('state', state);
 
-    const sessions = await prisma.quizSession.findMany({
-      where,
-      include: {
-        quiz: { select: { id: true, title: true, mode: true } },
-        _count: { select: { participants: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
+    const { data: sessions, error } = await query;
+    if (error) throw error;
 
-    return NextResponse.json({ sessions });
+    return NextResponse.json({ sessions: sessions || [] });
   } catch (error) {
     console.error('Error fetching sessions:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -66,12 +73,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify quiz exists and is published
-    const quiz = await prisma.quiz.findUnique({
-      where: { id: validation.data.quizId },
-      include: { questions: { orderBy: { order: 'asc' } } },
-    });
+    const { data: quiz, error: quizError } = await db
+      .from(Tables.quizzes)
+      .select('*, questions(*)')
+      .eq('id', validation.data.quizId)
+      .order('order', { referencedTable: 'questions', ascending: true })
+      .single();
 
-    if (!quiz) {
+    if (quizError || !quiz) {
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
 
@@ -79,14 +88,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Quiz must be published to create a session' }, { status: 400 });
     }
 
-    if (quiz.questions.length === 0) {
+    if (!quiz.questions || quiz.questions.length === 0) {
       return NextResponse.json({ error: 'Quiz must have at least one question' }, { status: 400 });
     }
 
     // Generate unique join code
     let joinCode = generateJoinCode();
     let attempts = 0;
-    while (await prisma.quizSession.findUnique({ where: { joinCode } })) {
+    while (true) {
+      const { data: existing } = await db
+        .from(Tables.quiz_sessions)
+        .select('id')
+        .eq('joinCode', joinCode)
+        .single();
+      if (!existing) break;
       joinCode = generateJoinCode();
       attempts++;
       if (attempts > 10) {
@@ -94,26 +109,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const quizSession = await prisma.quizSession.create({
-      data: {
+    // Create the session
+    const { data: quizSession, error: sessionError } = await db
+      .from(Tables.quiz_sessions)
+      .insert({
+        id: generateId(),
         quizId: validation.data.quizId,
         joinCode,
         allowLateJoin: validation.data.allowLateJoin,
         guestMode: validation.data.guestMode,
-        questions: {
-          create: quiz.questions.map((q: any, index: number) => ({
-            questionId: q.id,
-            order: index,
-          })),
-        },
-      },
-      include: {
-        quiz: { select: { id: true, title: true, mode: true } },
-        _count: { select: { participants: true } },
-      },
-    });
+      })
+      .select('*, quiz:quizzes(id, title, mode)')
+      .single();
 
-    // Initialize Redis session state
+    if (sessionError) throw sessionError;
+
+    // Create session_questions
+    const sessionQuestions = quiz.questions.map((q: any, index: number) => ({
+      id: generateId(),
+      sessionId: quizSession.id,
+      questionId: q.id,
+      order: index,
+    }));
+
+    const { error: sqError } = await db
+      .from(Tables.session_questions)
+      .insert(sessionQuestions);
+
+    if (sqError) throw sqError;
+
+    // Initialize in-memory session state
     await setSessionState(quizSession.id, 'WAITING');
 
     return NextResponse.json({ session: quizSession }, { status: 201 });

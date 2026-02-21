@@ -1,35 +1,156 @@
-import Redis from 'ioredis';
+/**
+ * In-memory store replacing Redis for localhost single-instance deployment.
+ * Provides the same API surface used by socket handlers and API routes.
+ */
 
-const globalForRedis = globalThis as unknown as {
-  redis: Redis | undefined;
-};
+// ─── In-Memory Key-Value Store ────────────────────────────
 
-function createRedisClient(): Redis {
-  const url = process.env.REDIS_URL || 'redis://localhost:6379';
-  
-  const client = new Redis(url, {
-    maxRetriesPerRequest: 3,
-    retryStrategy(times) {
-      const delay = Math.min(times * 50, 2000);
-      return delay;
-    },
-    lazyConnect: true,
-  });
-
-  client.on('error', (err) => {
-    console.error('Redis connection error:', err.message);
-  });
-
-  client.on('connect', () => {
-    console.log('✅ Redis connected');
-  });
-
-  return client;
+interface StoreEntry {
+  value: string;
+  expiresAt?: number; // ms timestamp
 }
 
-export const redis = globalForRedis.redis ?? createRedisClient();
+const store = new Map<string, StoreEntry>();
 
-if (process.env.NODE_ENV !== 'production') globalForRedis.redis = redis;
+// Sorted-set emulation: key → Map<member, score>
+const sortedSets = new Map<string, Map<string, number>>();
+
+// Counter emulation
+const counters = new Map<string, number>();
+
+// Cleanup expired keys periodically (every 30s)
+setInterval(() => {
+  const now = Date.now();
+  const expiredKeys: string[] = [];
+  store.forEach((entry, key) => {
+    if (entry.expiresAt && entry.expiresAt <= now) {
+      expiredKeys.push(key);
+    }
+  });
+  expiredKeys.forEach(key => store.delete(key));
+}, 30_000);
+
+/**
+ * Minimal Redis-compatible interface for the in-memory store.
+ * Only the methods actually used by this codebase are implemented.
+ */
+export const redis = {
+  async get(key: string): Promise<string | null> {
+    const entry = store.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt && entry.expiresAt <= Date.now()) {
+      store.delete(key);
+      return null;
+    }
+    return entry.value;
+  },
+
+  async set(key: string, value: string, ...args: any[]): Promise<'OK'> {
+    let ttlMs: number | undefined;
+    // Parse optional EX / PX arguments
+    for (let i = 0; i < args.length; i++) {
+      const flag = String(args[i]).toUpperCase();
+      if (flag === 'EX' && args[i + 1] !== undefined) {
+        ttlMs = Number(args[i + 1]) * 1000;
+        i++;
+      } else if (flag === 'PX' && args[i + 1] !== undefined) {
+        ttlMs = Number(args[i + 1]);
+        i++;
+      }
+    }
+    store.set(key, {
+      value,
+      expiresAt: ttlMs ? Date.now() + ttlMs : undefined,
+    });
+    return 'OK';
+  },
+
+  async del(...keys: string[]): Promise<number> {
+    let deleted = 0;
+    for (const key of keys) {
+      if (store.delete(key)) deleted++;
+      if (sortedSets.delete(key)) deleted++;
+      if (counters.delete(key)) deleted++;
+    }
+    return deleted;
+  },
+
+  async incr(key: string): Promise<number> {
+    const current = counters.get(key) || 0;
+    const next = current + 1;
+    counters.set(key, next);
+    return next;
+  },
+
+  async expire(key: string, seconds: number): Promise<number> {
+    const entry = store.get(key);
+    if (entry) {
+      entry.expiresAt = Date.now() + seconds * 1000;
+      return 1;
+    }
+    // For counters, wrap into store
+    if (counters.has(key)) {
+      store.set(key, {
+        value: String(counters.get(key)),
+        expiresAt: Date.now() + seconds * 1000,
+      });
+      return 1;
+    }
+    return 0;
+  },
+
+  async keys(pattern: string): Promise<string[]> {
+    // Simple glob-to-regex conversion for session:*:* patterns
+    const regexStr = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+    const regex = new RegExp(`^${regexStr}$`);
+    const matches: string[] = [];
+    store.forEach((_entry, key) => {
+      if (regex.test(key)) matches.push(key);
+    });
+    return matches;
+  },
+
+  async zadd(key: string, score: number, member: string): Promise<number> {
+    let set = sortedSets.get(key);
+    if (!set) {
+      set = new Map();
+      sortedSets.set(key, set);
+    }
+    const isNew = !set.has(member);
+    set.set(member, score);
+    return isNew ? 1 : 0;
+  },
+
+  async zrevrange(
+    key: string,
+    start: number,
+    stop: number,
+    withScores?: string
+  ): Promise<string[]> {
+    const set = sortedSets.get(key);
+    if (!set) return [];
+
+    const entries: Array<[string, number]> = [];
+    set.forEach((score, member) => entries.push([member, score]));
+    const sorted = entries.sort((a, b) => b[1] - a[1]);
+    const sliced = sorted.slice(start, stop + 1);
+
+    if (withScores?.toUpperCase() === 'WITHSCORES') {
+      const result: string[] = [];
+      for (const [member, score] of sliced) {
+        result.push(member, String(score));
+      }
+      return result;
+    }
+
+    return sliced.map(([member]) => member);
+  },
+};
+
+console.log('✅ In-memory store initialized (no Redis required)');
 
 // ─── Session State Helpers ────────────────────────────────
 

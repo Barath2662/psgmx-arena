@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── ENUMS ───────────────────────────────────────────────
@@ -72,6 +73,7 @@ model User {
   supabaseId         String?   @unique  // Supabase Auth UID
   name               String?
   email              String    @unique
+  registerNumber     String?   @unique  // Student register/roll number
   emailVerified      DateTime?
   image              String?
   role               Role      @default(STUDENT)

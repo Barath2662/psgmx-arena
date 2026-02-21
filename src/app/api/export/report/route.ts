@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, canManageQuizzes } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db, Tables } from '@/lib/db';
 import ExcelJS from 'exceljs';
 
 // GET /api/export/report?sessionId=xxx         — single session report
@@ -24,27 +24,32 @@ export async function GET(req: NextRequest) {
     workbook.created = new Date();
 
     if (sessionId) {
-      // ── Single session report ──
       await addSessionSheet(workbook, sessionId);
     } else if (all) {
-      // ── All sessions the user has access to ──
-      const where: any = {};
+      let query = db
+        .from(Tables.quiz_sessions)
+        .select('id')
+        .order('createdAt', { ascending: false })
+        .limit(50);
+
       if (user.role !== 'ADMIN') {
-        where.quiz = { instructorId: user.id };
+        const { data: userQuizzes } = await db
+          .from(Tables.quizzes)
+          .select('id')
+          .eq('instructorId', user.id);
+        const quizIds = (userQuizzes || []).map((q: any) => q.id);
+        if (quizIds.length === 0) {
+          return NextResponse.json({ error: 'No sessions found' }, { status: 404 });
+        }
+        query = query.in('quizId', quizIds);
       }
 
-      const sessions = await prisma.quizSession.findMany({
-        where,
-        select: { id: true },
-        orderBy: { createdAt: 'desc' },
-        take: 50, // cap at 50 sheets
-      });
+      const { data: sessions } = await query;
 
-      if (sessions.length === 0) {
+      if (!sessions || sessions.length === 0) {
         return NextResponse.json({ error: 'No sessions found' }, { status: 404 });
       }
 
-      // Also add a summary sheet
       const summarySheet = workbook.addWorksheet('Summary');
       summarySheet.columns = [
         { header: 'Quiz Title', key: 'quiz', width: 30 },
@@ -70,7 +75,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Generate buffer
     const buffer = await workbook.xlsx.writeBuffer();
 
     const filename = sessionId
@@ -91,35 +95,32 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ── Helper: add a worksheet for one session ──────────────
-
 async function addSessionSheet(workbook: ExcelJS.Workbook, sessionId: string) {
-  const session = await prisma.quizSession.findUnique({
-    where: { id: sessionId },
-    include: {
-      quiz: { select: { title: true } },
-      participants: {
-        orderBy: { totalScore: 'desc' },
-        include: {
-          user: { select: { name: true, email: true } },
-          answers: {
-            include: {
-              question: { select: { title: true, type: true, points: true } },
-            },
-            orderBy: { submittedAt: 'asc' },
-          },
-        },
-      },
-    },
-  });
+  const { data: session } = await db
+    .from(Tables.quiz_sessions)
+    .select(`
+      *,
+      quiz:quizzes(title),
+      participants:session_participants(
+        *,
+        user:users(name, email),
+        answers:student_answers(
+          *,
+          question:questions(title, type, points)
+        )
+      )
+    `)
+    .eq('id', sessionId)
+    .order('totalScore', { referencedTable: 'session_participants', ascending: false })
+    .order('submittedAt', { referencedTable: 'session_participants.student_answers', ascending: true })
+    .single();
 
   if (!session) return null;
 
-  const sheetName = (session.quiz?.title || sessionId).slice(0, 31); // Excel 31-char limit
+  const sheetName = (session.quiz?.title || sessionId).slice(0, 31);
   const sheet = workbook.addWorksheet(sheetName);
 
-  // Build columns: fixed columns + one per question
-  const questions = session.participants[0]?.answers.map((a) => a.question) || [];
+  const questions = session.participants?.[0]?.answers?.map((a: any) => a.question) || [];
   const fixedColumns: Partial<ExcelJS.Column>[] = [
     { header: 'Rank', key: 'rank', width: 8 },
     { header: 'Name', key: 'name', width: 22 },
@@ -129,8 +130,8 @@ async function addSessionSheet(workbook: ExcelJS.Workbook, sessionId: string) {
     { header: 'Streak', key: 'streak', width: 9 },
   ];
 
-  const questionColumns: Partial<ExcelJS.Column>[] = questions.map((q, i) => ({
-    header: `Q${i + 1}: ${q.title.slice(0, 40)}`,
+  const questionColumns: Partial<ExcelJS.Column>[] = questions.map((q: any, i: number) => ({
+    header: `Q${i + 1}: ${(q.title || '').slice(0, 40)}`,
     key: `q${i}`,
     width: 18,
   }));
@@ -138,7 +139,7 @@ async function addSessionSheet(workbook: ExcelJS.Workbook, sessionId: string) {
   sheet.columns = [...fixedColumns, ...questionColumns];
   styleHeaderRow(sheet);
 
-  session.participants.forEach((p, idx) => {
+  (session.participants || []).forEach((p: any, idx: number) => {
     const row: Record<string, any> = {
       rank: idx + 1,
       name: p.user?.name || p.guestName || 'Anonymous',
@@ -148,19 +149,17 @@ async function addSessionSheet(workbook: ExcelJS.Workbook, sessionId: string) {
       streak: p.streak,
     };
 
-    // Add per-question scores
-    p.answers.forEach((a, qi) => {
-      row[`q${qi}`] = `${a.score}/${a.question.points}${a.isCorrect ? ' ✓' : ' ✗'}`;
+    (p.answers || []).forEach((a: any, qi: number) => {
+      row[`q${qi}`] = `${a.score}/${a.question?.points || 0}${a.isCorrect ? ' ✓' : ' ✗'}`;
     });
 
     sheet.addRow(row);
   });
 
-  // Return summary data for the summary sheet
   const avgScore =
     session.participants.length > 0
       ? Math.round(
-          session.participants.reduce((s, p) => s + p.totalScore, 0) /
+          session.participants.reduce((s: number, p: any) => s + p.totalScore, 0) /
             session.participants.length
         )
       : 0;
@@ -171,8 +170,8 @@ async function addSessionSheet(workbook: ExcelJS.Workbook, sessionId: string) {
     state: session.state,
     participants: session.participants.length,
     avgScore,
-    startedAt: session.startedAt?.toISOString() || '—',
-    endedAt: session.endedAt?.toISOString() || '—',
+    startedAt: session.startedAt || '—',
+    endedAt: session.endedAt || '—',
   };
 }
 
@@ -182,7 +181,7 @@ function styleHeaderRow(sheet: ExcelJS.Worksheet) {
   headerRow.fill = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: 'FF4F46E5' }, // indigo
+    fgColor: { argb: 'FF4F46E5' },
   };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   headerRow.height = 24;

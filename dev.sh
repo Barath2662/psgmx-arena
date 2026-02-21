@@ -1,6 +1,7 @@
 #!/bin/bash
 # PSGMX Arena - Development Server Launcher (macOS/Linux)
-# Starts both Next.js frontend and Socket.IO backend in the same terminal with color coding
+# Starts Next.js client and Socket.IO server in the same terminal
+# Using Supabase for database and auth (no local Docker required)
 
 set -e
 
@@ -15,12 +16,14 @@ clear
 
 echo -e "${GREEN}"
 echo "=========================================="
-echo "   PSGMX Arena - Starting Development"
+echo "   PSGMX Arena - Local Development"
 echo "=========================================="
 echo -e "${NC}"
 echo ""
-echo -e "${BLUE}📦 Frontend:${NC} Next.js on ${BLUE}http://localhost:3000${NC}"
-echo -e "${BLUE}⚡ Backend:${NC}  Socket.IO on ${BLUE}http://localhost:3001${NC}"
+echo -e "   DB:     Supabase PostgreSQL (remote)"
+echo -e "   Auth:   Supabase Auth (remote)"
+echo -e "${BLUE}   Client:${NC} Next.js on ${BLUE}http://localhost:3000${NC}"
+echo -e "${BLUE}   Server:${NC} Socket.IO on ${BLUE}http://localhost:3001${NC}"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop both servers${NC}"
 echo ""
@@ -29,10 +32,10 @@ echo ""
 cleanup() {
     echo ""
     echo -e "${RED}Stopping servers...${NC}"
-    kill $FRONTEND_PID 2>/dev/null || true
-    kill $BACKEND_PID 2>/dev/null || true
-    wait $FRONTEND_PID 2>/dev/null || true
-    wait $BACKEND_PID 2>/dev/null || true
+    kill $CLIENT_PID 2>/dev/null || true
+    kill $SERVER_PID 2>/dev/null || true
+    wait $CLIENT_PID 2>/dev/null || true
+    wait $SERVER_PID 2>/dev/null || true
     echo -e "${GREEN}✓ Servers stopped${NC}"
     exit 0
 }
@@ -40,16 +43,16 @@ cleanup() {
 # Set trap to cleanup on Ctrl+C
 trap cleanup SIGINT SIGTERM
 
-# Start frontend in background
-npm run dev &
-FRONTEND_PID=$!
+# Start client (Next.js) in background
+npm run dev:client &
+CLIENT_PID=$!
 
-# Give frontend a moment to start
-sleep 2
+# Give client a moment to start
+sleep 3
 
-# Start backend in background
-npm run socket:dev &
-BACKEND_PID=$!
+# Start server (Socket.IO) in background
+npm run dev:server &
+SERVER_PID=$!
 
 echo -e "${GREEN}✓ Both servers starting...${NC}"
 echo ""

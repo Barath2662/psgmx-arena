@@ -161,12 +161,22 @@ export default function QuizEditPage() {
 
   async function deleteQuestion(questionId: string) {
     if (!confirm('Delete this question?')) return;
-    // Note: would need a DELETE endpoint for individual questions
-    setQuiz((prev: any) => ({
-      ...prev,
-      questions: prev.questions.filter((q: any) => q.id !== questionId),
-    }));
-    toast.success('Question removed');
+    try {
+      const res = await fetch(`/api/quiz/${quizId}/questions?questionId=${questionId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete');
+      }
+      setQuiz((prev: any) => ({
+        ...prev,
+        questions: prev.questions.filter((q: any) => q.id !== questionId),
+      }));
+      toast.success('Question deleted');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete question');
+    }
   }
 
   async function publishQuiz() {
@@ -293,6 +303,22 @@ export default function QuizEditPage() {
                             {opt.text}
                           </div>
                         ))}
+                      </div>
+                    )}
+                    {q.type === 'CODE' && q.optionsData && (
+                      <div className="mt-2 space-y-1">
+                        <div className="text-sm text-muted-foreground flex items-center gap-2">
+                          <Code2 className="h-3 w-3" />
+                          Language: <Badge variant="outline" className="text-xs">{q.optionsData.language || 'python'}</Badge>
+                          {q.optionsData.testCases?.length > 0 && (
+                            <span className="ml-2">{q.optionsData.testCases.length} test case(s)</span>
+                          )}
+                        </div>
+                        {q.optionsData.starterCode && (
+                          <pre className="text-xs font-mono bg-muted p-2 rounded mt-1 max-h-20 overflow-hidden">
+                            {q.optionsData.starterCode.slice(0, 150)}{q.optionsData.starterCode.length > 150 ? '...' : ''}
+                          </pre>
+                        )}
                       </div>
                     )}
                   </div>
@@ -556,9 +582,16 @@ export default function QuizEditPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {['python', 'javascript', 'java', 'c', 'cpp', 'go', 'rust'].map((l) => (
-                            <SelectItem key={l} value={l}>
-                              {l}
+                          {[
+                            { value: 'python', label: 'Python' },
+                            { value: 'javascript', label: 'JavaScript' },
+                            { value: 'typescript', label: 'TypeScript' },
+                            { value: 'java', label: 'Java' },
+                            { value: 'c', label: 'C' },
+                            { value: 'c++', label: 'C++' },
+                          ].map((l) => (
+                            <SelectItem key={l.value} value={l.value}>
+                              {l.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -577,6 +610,102 @@ export default function QuizEditPage() {
                           })
                         }
                       />
+                    </div>
+                    {/* Test Cases */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>Test Cases</Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const testCases = [...(newQuestion.optionsData?.testCases || [])];
+                            testCases.push({ input: '', expectedOutput: '', description: '' });
+                            setNewQuestion({
+                              ...newQuestion,
+                              optionsData: { ...newQuestion.optionsData, testCases },
+                            });
+                          }}
+                        >
+                          <Plus className="mr-1 h-3 w-3" /> Add Test Case
+                        </Button>
+                      </div>
+                      {(newQuestion.optionsData?.testCases || []).map((tc: any, i: number) => (
+                        <div key={i} className="border rounded-lg p-3 space-y-2 bg-muted/30">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-muted-foreground">Test Case {i + 1}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-destructive"
+                              onClick={() => {
+                                const testCases = (newQuestion.optionsData?.testCases || []).filter((_: any, j: number) => j !== i);
+                                setNewQuestion({
+                                  ...newQuestion,
+                                  optionsData: { ...newQuestion.optionsData, testCases },
+                                });
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Description (optional)</Label>
+                            <Input
+                              placeholder="e.g. Basic test case"
+                              value={tc.description || ''}
+                              onChange={(e) => {
+                                const testCases = [...(newQuestion.optionsData?.testCases || [])];
+                                testCases[i] = { ...testCases[i], description: e.target.value };
+                                setNewQuestion({
+                                  ...newQuestion,
+                                  optionsData: { ...newQuestion.optionsData, testCases },
+                                });
+                              }}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Input (stdin)</Label>
+                              <textarea
+                                className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-2 py-1 text-xs font-mono"
+                                placeholder="stdin input..."
+                                value={tc.input || ''}
+                                onChange={(e) => {
+                                  const testCases = [...(newQuestion.optionsData?.testCases || [])];
+                                  testCases[i] = { ...testCases[i], input: e.target.value };
+                                  setNewQuestion({
+                                    ...newQuestion,
+                                    optionsData: { ...newQuestion.optionsData, testCases },
+                                  });
+                                }}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Expected Output</Label>
+                              <textarea
+                                className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-2 py-1 text-xs font-mono"
+                                placeholder="Expected stdout..."
+                                value={tc.expectedOutput || ''}
+                                onChange={(e) => {
+                                  const testCases = [...(newQuestion.optionsData?.testCases || [])];
+                                  testCases[i] = { ...testCases[i], expectedOutput: e.target.value };
+                                  setNewQuestion({
+                                    ...newQuestion,
+                                    optionsData: { ...newQuestion.optionsData, testCases },
+                                  });
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {(!newQuestion.optionsData?.testCases || newQuestion.optionsData.testCases.length === 0) && (
+                        <p className="text-xs text-muted-foreground text-center py-2">
+                          No test cases added. Add at least one to auto-grade code submissions.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
