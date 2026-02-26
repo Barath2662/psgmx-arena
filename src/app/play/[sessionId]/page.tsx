@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { useSocket } from '@/components/providers/socket-provider';
 import { FullscreenGuard } from '@/components/fullscreen-guard';
 import CodeSandbox from '@/components/code-sandbox';
 import { Button } from '@/components/ui/button';
@@ -16,19 +15,15 @@ import {
   XCircle,
   Trophy,
   Zap,
-  Wifi,
-  WifiOff,
   Loader2,
   Send,
   Code2,
 } from 'lucide-react';
-import { formatTime, calculateScore, getStreakMultiplier } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 export default function PlaySessionPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
-  const { socket, isConnected, emit } = useSocket();
 
   const [session, setSession] = useState<any>(null);
   const [state, setState] = useState('WAITING');
@@ -38,120 +33,127 @@ export default function PlaySessionPage() {
   const [answerSubmitted, setAnswerSubmitted] = useState(false);
   const [participantId, setParticipantId] = useState('');
   const [score, setScore] = useState(0);
-  const [rank, setRank] = useState(0);
-  const [streak, setStreak] = useState(0);
   const [playerName, setPlayerName] = useState('');
   const [lastResult, setLastResult] = useState<{ correct: boolean; points: number } | null>(null);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const startTimeRef = useRef<number>(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevIndexRef = useRef<number>(-1);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load session & participant
+  // Auto-join: ensure the user is a participant
   useEffect(() => {
-    const pid = sessionStorage.getItem('participantId') || '';
-    setParticipantId(pid);
-    setPlayerName(sessionStorage.getItem('participantName') || 'Player');
+    (async () => {
+      try {
+        const res = await fetch(`/api/session/${sessionId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const s = data.session;
+        const quizId = s?.quizId || s?.quiz?.id;
+        if (!quizId) return;
 
-    fetch(`/api/session/${sessionId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setSession(data.session);
-        setState(data.session.state);
-        setCurrentIndex(data.session.currentQuestionIndex);
-      })
-      .catch(() => toast.error('Failed to load session'))
-      .finally(() => setLoading(false));
+        // Try to join (idempotent – the API skips if already joined)
+        const jr = await fetch(`/api/quiz/${quizId}/join`, { method: 'POST' });
+        if (jr.ok) {
+          const jd = await jr.json();
+          if (jd.participantId) {
+            sessionStorage.setItem('participantId', jd.participantId);
+            setParticipantId(jd.participantId);
+          }
+        }
+      } catch { /* ignore */ }
+    })();
   }, [sessionId]);
 
-  // Socket events
-  useEffect(() => {
-    if (!socket || !participantId) return;
+  // Fetch session data (used for polling)
+  const fetchSession = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/session/${sessionId}`);
+      const data = await res.json();
+      if (!res.ok) return;
 
-    socket.emit('JOIN_SESSION', { sessionId, participantId });
+      const s = data.session;
+      setSession(s);
+      setState(s.state);
+      setCurrentIndex(s.currentQuestionIndex ?? 0);
 
-    socket.on('SESSION_STATE_CHANGE', ({ state: s, currentQuestionIndex }: { state: string; currentQuestionIndex: number }) => {
-      setState(s);
-      setCurrentIndex(currentQuestionIndex);
-      if (s === 'QUESTION_ACTIVE') {
-        // Reset for new question
+      // Detect question change → reset answer state
+      if (s.currentQuestionIndex !== prevIndexRef.current && s.state === 'QUESTION_ACTIVE') {
+        prevIndexRef.current = s.currentQuestionIndex;
         setSelectedAnswer(null);
         setAnswerSubmitted(false);
         setLastResult(null);
         startTimeRef.current = Date.now();
+
+        // Start countdown timer for MCQ/FILL_BLANK
+        const questions = s.quiz?.questions || [];
+        const currentQ = questions[s.currentQuestionIndex ?? 0];
+        if (currentQ && ['MCQ', 'TRUE_FALSE', 'MULTI_SELECT', 'FILL_BLANK'].includes(currentQ.type)) {
+          const tl = currentQ.timeLimit || s.quiz?.timePerQuestion || 0;
+          if (tl > 0) {
+            setTimer(tl);
+            if (timerRef.current) clearInterval(timerRef.current);
+            timerRef.current = setInterval(() => {
+              setTimer((prev) => {
+                if (prev <= 1) {
+                  if (timerRef.current) clearInterval(timerRef.current);
+                  return 0;
+                }
+                return prev - 1;
+              });
+            }, 1000);
+          } else {
+            setTimer(0);
+          }
+        } else {
+          setTimer(0); // No timer for other types
+          if (timerRef.current) clearInterval(timerRef.current);
+        }
       }
-    });
+    } catch {
+      // Silent retry via polling
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId]);
 
-    socket.on('TIMER_SYNC', ({ remaining }: { remaining: number }) => setTimer(remaining));
-    
-    socket.on('SCORE_UPDATE', ({ participantId: pid, score: s, rank: r }: { participantId: string; score: number; rank: number }) => {
-      if (pid === participantId) {
-        setScore(s);
-        setRank(r);
-      }
-    });
-
-    socket.on('QUESTION_RESULTS', ({ correctAnswer, leaderboard: lb }: { correctAnswer: string; leaderboard: any[] }) => {
-      if (selectedAnswer) {
-        const isCorrect = selectedAnswer === correctAnswer ||
-          (Array.isArray(selectedAnswer) && selectedAnswer.join(',') === correctAnswer);
-        setLastResult({
-          correct: isCorrect,
-          points: isCorrect ? 10 : 0,
-        });
-        if (isCorrect) setStreak((s) => s + 1);
-        else setStreak(0);
-      }
-      setLeaderboard(lb || []);
-    });
-
-    socket.on('SESSION_COMPLETE', ({ finalLeaderboard }: { finalLeaderboard: any[] }) => {
-      setLeaderboard(finalLeaderboard || []);
-    });
-
-    socket.on('ERROR', ({ message }: { message: string }) => toast.error(message));
-
+  // Initial fetch + polling every 2s
+  useEffect(() => {
+    fetchSession();
+    pollRef.current = setInterval(fetchSession, 2000);
     return () => {
-      socket.off('SESSION_STATE_CHANGE');
-      socket.off('TIMER_SYNC');
-      socket.off('SCORE_UPDATE');
-      socket.off('QUESTION_RESULTS');
-      socket.off('SESSION_COMPLETE');
-      socket.off('ERROR');
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [socket, sessionId, participantId, selectedAnswer]);
+  }, [fetchSession]);
 
   const submitAnswer = useCallback(
-    (answerData: any) => {
+    async (answerData: any) => {
       if (answerSubmitted) return;
-      
-      const timeTakenMs = Date.now() - startTimeRef.current;
-      
-      emit('SUBMIT_ANSWER', {
-        sessionId,
-        participantId,
-        questionId: session.quiz.questions[currentIndex]?.id || '',
-        answerData,
-        timeTakenMs,
-      });
 
-      // Also POST to API for persistence
-      fetch(`/api/session/${sessionId}/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          participantId,
-          questionId: session.quiz.questions[currentIndex]?.id,
-          answerData,
-          timeTakenMs,
-        }),
-      }).catch(console.error);
+      const timeTakenMs = Date.now() - startTimeRef.current;
+
+      try {
+        await fetch(`/api/session/${sessionId}/answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            participantId,
+            questionId: session?.quiz?.questions?.[currentIndex]?.id,
+            answerData,
+            timeTakenMs,
+          }),
+        });
+      } catch {
+        // Still mark as submitted locally
+      }
 
       setSelectedAnswer(answerData);
       setAnswerSubmitted(true);
       toast.success('Answer submitted!');
     },
-    [answerSubmitted, emit, sessionId, participantId, currentIndex, session]
+    [answerSubmitted, sessionId, participantId, currentIndex, session]
   );
 
   if (loading || !session) {
@@ -172,28 +174,14 @@ export default function PlaySessionPage() {
       <div className="border-b bg-card sticky top-0 z-50">
         <div className="flex items-center justify-between h-12 px-4">
           <div className="flex items-center gap-3">
-            <Badge variant={isConnected ? 'success' : 'destructive'} className="text-xs">
-              {isConnected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-            </Badge>
             <span className="font-medium text-sm truncate">{session.quiz?.title}</span>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium truncate max-w-[120px]">{playerName}</span>
-            {streak > 1 && (
-              <Badge variant="warning" className="flex items-center gap-1 animate-score-pop">
-                <Zap className="h-3 w-3" /> {streak} streak!
-              </Badge>
-            )}
             <div className="text-right">
               <span className="text-xs text-muted-foreground">Score</span>
               <p className="font-bold text-primary">{score}</p>
             </div>
-            {rank > 0 && (
-              <div className="text-right">
-                <span className="text-xs text-muted-foreground">Rank</span>
-                <p className="font-bold">#{rank}</p>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -238,7 +226,7 @@ export default function PlaySessionPage() {
               </CardHeader>
             </Card>
 
-            {/* Answer options based on type */}
+            {/* MCQ / TRUE_FALSE */}
             {['MCQ', 'TRUE_FALSE'].includes(currentQuestion.type) && (
               <div className="space-y-3">
                 {currentQuestion.optionsData?.options?.map((opt: any, i: number) => (
@@ -249,9 +237,7 @@ export default function PlaySessionPage() {
                       selectedAnswer === opt.id ? 'ring-2 ring-primary' : ''
                     }`}
                     onClick={() => {
-                      if (!answerSubmitted) {
-                        submitAnswer(opt.id);
-                      }
+                      if (!answerSubmitted) submitAnswer(opt.id);
                     }}
                     disabled={answerSubmitted}
                   >
@@ -273,7 +259,7 @@ export default function PlaySessionPage() {
               />
             )}
 
-            {/* Fill blank / Short answer / Numeric */}
+            {/* Fill blank / Short answer / Numeric / Long answer */}
             {['FILL_BLANK', 'SHORT_ANSWER', 'NUMERIC'].includes(currentQuestion.type) && (
               <TextInputAnswer
                 type={currentQuestion.type === 'NUMERIC' ? 'number' : 'text'}
@@ -287,6 +273,16 @@ export default function PlaySessionPage() {
               />
             )}
 
+            {currentQuestion.type === 'LONG_ANSWER' && (
+              <TextInputAnswer
+                type="text"
+                submitted={answerSubmitted}
+                onSubmit={submitAnswer}
+                placeholder="Type your answer..."
+                multiline
+              />
+            )}
+
             {/* Code */}
             {currentQuestion.type === 'CODE' && (
               <div className="space-y-4">
@@ -295,9 +291,7 @@ export default function PlaySessionPage() {
                   starterCode={currentQuestion.optionsData?.starterCode || ''}
                   testCases={currentQuestion.optionsData?.testCases || []}
                   readOnly={answerSubmitted}
-                  onSubmit={(code, language) => {
-                    submitAnswer({ code, language });
-                  }}
+                  onSubmit={(code, language) => submitAnswer({ code, language })}
                 />
               </div>
             )}
@@ -315,7 +309,7 @@ export default function PlaySessionPage() {
         {/* LOCKED */}
         {state === 'LOCKED' && (
           <div className="text-center py-20 space-y-4">
-            <Lock className="h-16 w-16 text-muted-foreground mx-auto" />
+            <LockIcon className="h-16 w-16 text-muted-foreground mx-auto" />
             <h2 className="text-2xl font-bold">Answers Locked</h2>
             <p className="text-muted-foreground">Waiting for results...</p>
           </div>
@@ -353,48 +347,9 @@ export default function PlaySessionPage() {
               <Trophy className="h-20 w-20 text-yellow-500 mx-auto mb-4 animate-score-pop" />
               <h2 className="text-3xl font-bold">Quiz Complete!</h2>
               <p className="text-xl text-muted-foreground mt-2">
-                Your score: <span className="font-bold text-primary">{score}</span>
+                Thank you for participating!
               </p>
-              {rank > 0 && (
-                <p className="text-lg text-muted-foreground">
-                  Rank: <span className="font-bold">#{rank}</span>
-                </p>
-              )}
             </div>
-
-            {leaderboard.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-yellow-500" /> Leaderboard
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {leaderboard.slice(0, 10).map((entry, i) => (
-                      <div
-                        key={entry.participantId}
-                        className={`flex items-center justify-between p-3 rounded-lg ${
-                          entry.participantId === participantId
-                            ? 'bg-primary/10 border border-primary'
-                            : 'bg-muted'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg font-bold w-8">
-                            {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
-                          </span>
-                          <span className="font-medium">
-                            {entry.name || `Player ${i + 1}`}
-                          </span>
-                        </div>
-                        <span className="font-bold">{entry.score}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
         )}
       </div>
@@ -496,7 +451,7 @@ function TextInputAnswer({
   );
 }
 
-function Lock({ className }: { className?: string }) {
+function LockIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />

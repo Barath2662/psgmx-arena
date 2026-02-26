@@ -1,1 +1,10 @@
-change password for admin after initail login
+home button for stutents, after completing and submitting test.
+test wise score display for students.
+could select test by students in leaderboard.
+scheding test. so that the students can view the topics for the quiz.
+categorize completed test, live test, upcoming test.
+points are not diplaying properly.correct answer also considered as worong
+no need overall leaderboard. need it test wise.
+need userwise analytics in instructor and admin page.
+keep a overall time limit for the test. not per question.
+no need to lock answer for each questions. after starting the quiz let the students complete the quiz and submit the final one before the time is completing. if the time is completed automatic submit.

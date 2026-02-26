@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/components/providers/auth-provider';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -322,6 +323,38 @@ function InstructorDashboard() {
 // ─── STUDENT DASHBOARD ──────────────────────────────────
 
 function StudentDashboard({ userName }: { userName: string }) {
+  const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [joining, setJoining] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const router = useRouter();
+
+  useEffect(() => {
+    fetch('/api/quiz?status=PUBLISHED&limit=50')
+      .then((r) => r.json())
+      .then((data) => setQuizzes(data.quizzes || []))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const joinQuiz = async (quizId: string) => {
+    setJoining(quizId);
+    setError('');
+    try {
+      const res = await fetch(`/api/quiz/${quizId}/join`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to join');
+        setJoining(null);
+        return;
+      }
+      router.push(`/play/${data.sessionId}`);
+    } catch {
+      setError('Network error');
+      setJoining(null);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Welcome banner */}
@@ -331,14 +364,9 @@ function StudentDashboard({ userName }: { userName: string }) {
             Welcome, {userName}! <span className="animate-pulse">👋</span>
           </h1>
           <p className="text-muted-foreground mt-2 text-lg">
-            Ready for your next challenge? Join a live quiz or review your performance.
+            Published quizzes will appear below. Join when the instructor starts the session.
           </p>
           <div className="flex gap-3 mt-6">
-            <Link href="/join">
-              <Button variant="arena" size="lg" className="shadow-lg">
-                <Play className="mr-2 h-5 w-5" /> Join a Quiz
-              </Button>
-            </Link>
             <Link href="/dashboard/leaderboard">
               <Button variant="outline" size="lg">
                 <Trophy className="mr-2 h-5 w-5" /> Leaderboard
@@ -351,68 +379,88 @@ function StudentDashboard({ userName }: { userName: string }) {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          title="Quizzes Taken"
-          value="—"
-          icon={<BookOpen className="h-5 w-5" />}
-          description="Total attempts"
-          gradient="from-blue-500/10 to-cyan-500/10"
-          iconColor="text-blue-500"
-        />
-        <StatCard
-          title="Best Streak"
-          value="—"
-          icon={<Trophy className="h-5 w-5" />}
-          description="Consecutive correct"
-          gradient="from-yellow-500/10 to-amber-500/10"
-          iconColor="text-yellow-500"
-        />
-        <StatCard
-          title="Avg. Score"
-          value="—%"
-          icon={<BarChart3 className="h-5 w-5" />}
-          description="Overall accuracy"
-          gradient="from-green-500/10 to-emerald-500/10"
-          iconColor="text-green-500"
-        />
-      </div>
+      {error && (
+        <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg px-4 py-3 text-sm">
+          {error}
+        </div>
+      )}
 
-      {/* Quick actions */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Play className="h-5 w-5 text-primary" /> Quick Join
-            </CardTitle>
-            <CardDescription>Enter a session code to join a live quiz</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link href="/join">
-              <Button variant="arena" size="lg" className="w-full">
-                <Play className="mr-2 h-5 w-5" /> Enter Join Code
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
+      {/* Published Quizzes */}
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BookOpen className="h-5 w-5 text-primary" /> Available Quizzes
+          </CardTitle>
+          <CardDescription>Click Join to enter a quiz when the instructor starts it</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-muted-foreground text-center py-8">Loading quizzes...</p>
+          ) : quizzes.length === 0 ? (
+            <div className="text-center py-8">
+              <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">No published quizzes yet</p>
+              <p className="text-xs text-muted-foreground mt-1">Check back later</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {quizzes.map((q: any) => (
+                <div
+                  key={q.id}
+                  className="flex items-center justify-between p-4 border rounded-xl hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{q.title}</p>
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                      <span className="flex items-center gap-1">
+                        <BookOpen className="h-3 w-3" />
+                        {q.questions?.length ?? 0} questions
+                      </span>
+                      {q.instructor?.name && (
+                        <span className="flex items-center gap-1">
+                          <GraduationCap className="h-3 w-3" />
+                          {q.instructor.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="arena"
+                    size="sm"
+                    onClick={() => joinQuiz(q.id)}
+                    disabled={joining === q.id}
+                  >
+                    {joining === q.id ? (
+                      'Joining...'
+                    ) : (
+                      <>
+                        <Play className="mr-1 h-4 w-4" /> Join
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-blue-500" /> Need Help?
-            </CardTitle>
-            <CardDescription>Reach out to our support team</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <a href="mailto:barathvikramansk@gmail.com">
-              <Button variant="outline" className="w-full">
-                <Mail className="mr-2 h-4 w-4" /> Contact Support
-              </Button>
-            </a>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Help */}
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5 text-blue-500" /> Need Help?
+          </CardTitle>
+          <CardDescription>Reach out to our support team</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <a href="mailto:barathvikramansk@gmail.com">
+            <Button variant="outline" className="w-full">
+              <Mail className="mr-2 h-4 w-4" /> Contact Support
+            </Button>
+          </a>
+        </CardContent>
+      </Card>
     </div>
   );
 }

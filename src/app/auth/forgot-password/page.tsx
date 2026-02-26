@@ -14,9 +14,9 @@ function isRegisterNumber(input: string): boolean {
   return /^\d{2}MX\d{3}$/i.test(input.trim());
 }
 
-/** Convert register number to synthetic email */
-function toSyntheticEmail(regNo: string): string {
-  return `${regNo.toLowerCase()}@student.psgmx`;
+/** Convert register number to student email */
+function toStudentEmail(regNo: string): string {
+  return `${regNo.toLowerCase()}@psgtech.ac.in`;
 }
 
 export default function ForgotPasswordPage() {
@@ -31,7 +31,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const email = isRegisterNumber(input) ? toSyntheticEmail(input) : input;
+      const email = isRegisterNumber(input) ? toStudentEmail(input) : input;
 
       const res = await fetch('/api/auth/forgot-password', {
         method: 'POST',

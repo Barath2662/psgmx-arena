@@ -25,12 +25,19 @@ export async function GET(
         )
       `)
       .eq('id', params.sessionId)
-      .order('order', { referencedTable: 'quiz_sessions.quiz.questions', ascending: true })
-      .order('totalScore', { referencedTable: 'session_participants', ascending: false })
       .single();
 
     if (error || !quizSession) {
+      console.error('Analytics query error:', error);
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // Sort in memory (nested .order() on referenced tables can fail in PostgREST)
+    if (quizSession.quiz?.questions) {
+      quizSession.quiz.questions.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+    }
+    if (quizSession.participants) {
+      quizSession.participants.sort((a: any, b: any) => (b.totalScore ?? 0) - (a.totalScore ?? 0));
     }
 
     // Compute analytics

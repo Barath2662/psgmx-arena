@@ -29,21 +29,24 @@ export default function SessionAnalyticsPage() {
   useEffect(() => {
     fetch(`/api/analytics/session/${sessionId}`)
       .then((r) => r.json())
-      .then(setData)
+      .then((json) => {
+        // API returns { analytics: { ... } } — unwrap it
+        setData(json.analytics || json);
+      })
       .catch(() => toast.error('Failed to load analytics'))
       .finally(() => setLoading(false));
   }, [sessionId]);
 
   const exportCSV = () => {
     if (!data) return;
-    const rows = [['Student', 'Score', 'Correct', 'Wrong', 'Avg Time (s)']];
-    (data.participants || []).forEach((p: any) => {
+    const rows = [['Student', 'Score', 'Correct', 'Total Questions', 'Accuracy (%)']];
+    (studentReports || []).forEach((p: any) => {
       rows.push([
-        p.name || p.userId || 'Guest',
-        p.score,
+        p.name || 'Guest',
+        p.totalScore,
         p.correctCount,
-        p.wrongCount,
-        ((p.avgTimeMs || 0) / 1000).toFixed(1),
+        p.totalQuestions,
+        p.accuracy,
       ]);
     });
     const csv = rows.map((r) => r.join(',')).join('\n');
@@ -70,11 +73,30 @@ export default function SessionAnalyticsPage() {
   }
 
   const {
-    session: sess,
-    participants = [],
+    quizTitle,
+    totalParticipants = 0,
+    avgScore = 0,
+    medianScore = 0,
+    maxPossibleScore = 0,
     questionStats = [],
-    overallStats = {},
+    scoreDistribution = [],
+    studentReports = [],
+    startedAt,
+    endedAt,
   } = data;
+
+  // Build compatible structures for the UI
+  const participants = studentReports;
+  const overallStats = {
+    totalParticipants,
+    avgAccuracy: maxPossibleScore > 0 ? Math.round((avgScore / maxPossibleScore) * 100) : 0,
+    avgTimeMs: questionStats.length > 0
+      ? questionStats.reduce((sum: number, q: any) => sum + (q.avgTimeMs || 0), 0) / questionStats.length
+      : 0,
+    highScore: studentReports.length > 0
+      ? Math.max(...studentReports.map((s: any) => s.totalScore || 0))
+      : 0,
+  };
 
   return (
     <div className="space-y-6">
@@ -84,10 +106,10 @@ export default function SessionAnalyticsPage() {
           <Link href="/dashboard/sessions" className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 mb-2">
             <ArrowLeft className="h-3 w-3" /> Back to sessions
           </Link>
-          <h1 className="text-2xl font-bold">{sess?.quiz?.title || 'Session'} Analytics</h1>
+          <h1 className="text-2xl font-bold">{quizTitle || 'Session'} Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            Session Code: {sess?.joinCode} &middot;{' '}
-            {sess?.createdAt ? new Date(sess.createdAt).toLocaleDateString() : ''}
+            Session ID: {sessionId}
+            {startedAt ? ` · ${new Date(startedAt).toLocaleDateString()}` : ''}
           </p>
         </div>
         <Button variant="outline" onClick={exportCSV}>
@@ -147,19 +169,19 @@ export default function SessionAnalyticsPage() {
         <CardContent>
           <div className="space-y-2">
             {(() => {
-              const maxScore = Math.max(...participants.map((p: any) => p.score || 0), 1);
-              const sorted = [...participants].sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
+              const maxScore = Math.max(...participants.map((p: any) => p.totalScore || 0), 1);
+              const sorted = [...participants].sort((a: any, b: any) => (b.totalScore || 0) - (a.totalScore || 0));
               return sorted.map((p: any, i: number) => (
                 <div key={p.id || i} className="flex items-center gap-3">
                   <span className="w-8 text-sm font-mono text-muted-foreground">#{i + 1}</span>
-                  <span className="w-32 text-sm truncate">{p.name || p.user?.name || 'Guest'}</span>
+                  <span className="w-32 text-sm truncate">{p.name || 'Guest'}</span>
                   <div className="flex-1">
                     <div className="h-6 bg-muted rounded-full overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-full transition-all duration-500 flex items-center justify-end pr-2"
-                        style={{ width: `${Math.max(((p.score || 0) / maxScore) * 100, 5)}%` }}
+                        style={{ width: `${Math.max(((p.totalScore || 0) / maxScore) * 100, 5)}%` }}
                       >
-                        <span className="text-xs font-bold text-white">{p.score || 0}</span>
+                        <span className="text-xs font-bold text-white">{p.totalScore || 0}</span>
                       </div>
                     </div>
                   </div>
@@ -179,8 +201,10 @@ export default function SessionAnalyticsPage() {
           {questionStats.length === 0 && (
             <p className="text-sm text-muted-foreground">No question data available</p>
           )}
-          {questionStats.map((q: any, i: number) => (
-            <div key={q.id || i} className="p-4 border rounded-lg">
+          {questionStats.map((q: any, i: number) => {
+            const wrongCount = (q.totalAnswers || 0) - (q.correctCount || 0);
+            return (
+            <div key={q.questionId || i} className="p-4 border rounded-lg">
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <Badge variant="outline" className="mb-1 text-xs">Q{i + 1} &middot; {q.type}</Badge>
@@ -188,25 +212,26 @@ export default function SessionAnalyticsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="text-right">
-                    <p className="text-lg font-bold text-green-600">{q.correctPercent || 0}%</p>
+                    <p className="text-lg font-bold text-green-600">{q.accuracy || 0}%</p>
                     <p className="text-xs text-muted-foreground">correct</p>
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <Progress value={q.correctPercent || 0} className="flex-1 h-3" />
+                <Progress value={q.accuracy || 0} className="flex-1 h-3" />
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <CheckCircle className="h-3 w-3 text-green-500" /> {q.correctCount || 0}
                   </span>
                   <span className="flex items-center gap-1">
-                    <XCircle className="h-3 w-3 text-red-400" /> {q.wrongCount || 0}
+                    <XCircle className="h-3 w-3 text-red-400" /> {wrongCount}
                   </span>
                   <span>Avg: {((q.avgTimeMs || 0) / 1000).toFixed(1)}s</span>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -231,20 +256,20 @@ export default function SessionAnalyticsPage() {
               </thead>
               <tbody>
                 {[...participants]
-                  .sort((a: any, b: any) => (b.score || 0) - (a.score || 0))
+                  .sort((a: any, b: any) => (b.totalScore || 0) - (a.totalScore || 0))
                   .map((p: any, i: number) => {
-                    const total = (p.correctCount || 0) + (p.wrongCount || 0);
-                    const accuracy = total > 0 ? Math.round(((p.correctCount || 0) / total) * 100) : 0;
+                    const wrongCount = (p.totalQuestions || 0) - (p.correctCount || 0);
+                    const accuracy = p.accuracy || 0;
                     return (
                       <tr key={p.id || i} className="border-b hover:bg-muted/50">
                         <td className="p-2 font-mono">
                           {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
                         </td>
-                        <td className="p-2 font-medium">{p.name || p.user?.name || 'Guest'}</td>
-                        <td className="p-2 font-bold text-primary">{p.score || 0}</td>
+                        <td className="p-2 font-medium">{p.name || 'Guest'}</td>
+                        <td className="p-2 font-bold text-primary">{p.totalScore || 0}</td>
                         <td className="p-2 text-green-600">{p.correctCount || 0}</td>
-                        <td className="p-2 text-red-400">{p.wrongCount || 0}</td>
-                        <td className="p-2">{((p.avgTimeMs || 0) / 1000).toFixed(1)}s</td>
+                        <td className="p-2 text-red-400">{wrongCount}</td>
+                        <td className="p-2">—</td>
                         <td className="p-2">
                           <div className="flex items-center gap-2">
                             <Progress value={accuracy} className="w-16 h-2" />

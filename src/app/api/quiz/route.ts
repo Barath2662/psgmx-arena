@@ -23,10 +23,15 @@ export async function GET(req: NextRequest) {
       .order('updatedAt', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (!isAdminRole(user.role)) {
+    // Students: only see PUBLISHED quizzes (from any instructor)
+    // Instructors: see their own quizzes
+    // Admins: see all quizzes
+    if (user.role === 'STUDENT') {
+      query = query.eq('status', 'PUBLISHED');
+    } else if (!isAdminRole(user.role)) {
       query = query.eq('instructorId', user.id);
     }
-    if (status) {
+    if (status && user.role !== 'STUDENT') {
       query = query.eq('status', status);
     }
 

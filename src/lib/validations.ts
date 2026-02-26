@@ -25,7 +25,11 @@ export const createQuizSchema = z.object({
   scheduledEndTime: z.string().datetime().optional(),
 });
 
-export const updateQuizSchema = createQuizSchema.partial();
+export const updateQuizSchema = createQuizSchema
+  .extend({
+    status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional(),
+  })
+  .partial();
 
 // ─── Question ────────────────────────────────────────────
 

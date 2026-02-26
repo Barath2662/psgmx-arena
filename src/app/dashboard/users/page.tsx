@@ -33,10 +33,9 @@ interface UserData {
   id: string;
   name: string | null;
   email: string;
+  displayEmail: string;
   role: string;
   registerNumber: string | null;
-  createdAt: string;
-  _count?: { quizzes: number; participants: number };
 }
 
 interface PasswordResetRequest {
@@ -86,11 +85,36 @@ export default function ManageUsersPage() {
       params.set('limit', '100');
 
       const res = await fetch(`/api/admin/users?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data.users);
+      const data = await res.json();
+      
+      console.log('Fetch users response:', { status: res.status, data });
+      
+      if (res.ok && Array.isArray(data.users)) {
+        // Map to ensure we have the correct fields
+        const mappedUsers = data.users.map((u: any) => {
+          const regNo = u.registerNumber || null;
+          // Derive display email: for students with regNo, show regno@psgtech.ac.in
+          const displayEmail = regNo
+            ? `${regNo.toLowerCase()}@psgtech.ac.in`
+            : u.email;
+          return {
+            id: u.id,
+            name: u.name || null,
+            email: u.email,
+            displayEmail,
+            role: u.role,
+            registerNumber: regNo,
+          };
+        });
+        setUsers(mappedUsers);
+        console.log('Users set:', mappedUsers.length);
+      } else {
+        console.error('API error:', data.error);
+        setUsers([]);
+        toast.error('Failed to fetch users');
       }
-    } catch {
+    } catch (err) {
+      console.error('Fetch error:', err);
       toast.error('Failed to fetch users');
     } finally {
       setLoading(false);
@@ -438,7 +462,6 @@ export default function ManageUsersPage() {
                       <th className="pb-3 font-medium">Reg. No.</th>
                       <th className="pb-3 font-medium">Email</th>
                       <th className="pb-3 font-medium">Role</th>
-                      <th className="pb-3 font-medium">Joined</th>
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -447,7 +470,7 @@ export default function ManageUsersPage() {
                       <tr key={u.id} className="border-b last:border-0">
                         <td className="py-3 font-medium">{u.name || '—'}</td>
                         <td className="py-3 text-sm font-mono text-muted-foreground">{u.registerNumber || '—'}</td>
-                        <td className="py-3 text-sm text-muted-foreground">{u.email}</td>
+                        <td className="py-3 text-sm text-muted-foreground">{u.displayEmail}</td>
                         <td className="py-3">
                           <Select
                             value={u.role}
@@ -462,9 +485,6 @@ export default function ManageUsersPage() {
                               <SelectItem value="STUDENT">Student</SelectItem>
                             </SelectContent>
                           </Select>
-                        </td>
-                        <td className="py-3 text-sm text-muted-foreground">
-                          {new Date(u.createdAt).toLocaleDateString()}
                         </td>
                         <td className="py-3">
                           <Button

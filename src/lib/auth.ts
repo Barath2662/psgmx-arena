@@ -62,6 +62,15 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       if (updated) user = updated;
     }
 
+    // Derive registerNumber from email if column doesn't exist in DB
+    let regNo = user.registerNumber || null;
+    if (!regNo && user.email?.endsWith('@psgtech.ac.in')) {
+      const prefix = user.email.split('@')[0];
+      if (/^\d{2}mx\d{3}$/i.test(prefix)) {
+        regNo = prefix.toUpperCase();
+      }
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -69,7 +78,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       role: user.role as UserRole,
       supabaseId: user.supabaseId || supabaseUser.id,
       mustChangePassword: user.mustChangePassword,
-      registerNumber: user.registerNumber || null,
+      registerNumber: regNo,
     };
   } catch {
     return null;

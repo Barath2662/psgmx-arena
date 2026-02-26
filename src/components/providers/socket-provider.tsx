@@ -1,20 +1,17 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
-import type { ServerToClientEvents, ClientToServerEvents } from '@/types/socket';
+import { createContext, useContext } from 'react';
 
-type ArenaSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-
+/**
+ * Socket provider is now a no-op.
+ * All real-time communication uses HTTP polling instead.
+ */
 interface SocketContextType {
-  socket: ArenaSocket | null;
+  socket: null;
   isConnected: boolean;
   joinSession: (sessionId: string, participantId: string) => void;
   leaveSession: (sessionId: string) => void;
-  emit: <E extends keyof ClientToServerEvents>(
-    event: E,
-    ...args: Parameters<ClientToServerEvents[E]>
-  ) => void;
+  emit: (...args: any[]) => void;
 }
 
 const SocketContext = createContext<SocketContextType>({
@@ -26,67 +23,14 @@ const SocketContext = createContext<SocketContextType>({
 });
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
-  const socketRef = useRef<ArenaSocket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-
-  useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
-    console.log('🔌 Connecting to WebSocket server:', wsUrl);
-    
-    const socket: ArenaSocket = io(wsUrl, {
-      transports: ['websocket', 'polling'],
-      autoConnect: true,
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-    });
-
-    socket.on('connect', () => {
-      console.log('⚡ Socket connected:', socket.id);
-      setIsConnected(true);
-    });
-
-    socket.on('disconnect', (reason: string) => {
-      console.log('🔌 Socket disconnected:', reason);
-      setIsConnected(false);
-    });
-
-    socket.on('connect_error', (err: Error) => {
-      console.error('Socket connection error:', err.message);
-    });
-
-    socketRef.current = socket;
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, []);
-
-  const joinSession = useCallback((sessionId: string, participantId: string) => {
-    socketRef.current?.emit('JOIN_SESSION', { sessionId, participantId });
-  }, []);
-
-  const leaveSession = useCallback((sessionId: string) => {
-    socketRef.current?.emit('LEAVE_SESSION', { sessionId });
-  }, []);
-
-  const emit = useCallback(<E extends keyof ClientToServerEvents>(
-    event: E,
-    ...args: Parameters<ClientToServerEvents[E]>
-  ) => {
-    socketRef.current?.emit(event, ...args);
-  }, []);
-
   return (
     <SocketContext.Provider
       value={{
-        socket: socketRef.current,
-        isConnected,
-        joinSession,
-        leaveSession,
-        emit,
+        socket: null,
+        isConnected: false,
+        joinSession: () => {},
+        leaveSession: () => {},
+        emit: () => {},
       }}
     >
       {children}

@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { useSocket } from '@/components/providers/socket-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,96 +13,94 @@ import {
   Lock,
   BarChart3,
   Trophy,
-  Copy,
   Square,
   Clock,
   CheckCircle,
-  XCircle,
-  Wifi,
+  Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function HostSessionPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
-  const { socket, isConnected, emit } = useSocket();
 
   const [session, setSession] = useState<any>(null);
   const [state, setState] = useState('WAITING');
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answerCount, setAnswerCount] = useState(0);
   const [participantCount, setParticipantCount] = useState(0);
-  const [timer, setTimer] = useState(0);
+  const [answerCount, setAnswerCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch session data
-  useEffect(() => {
-    fetch(`/api/session/${sessionId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setSession(data.session);
-        setState(data.session.state);
-        setCurrentIndex(data.session.currentQuestionIndex);
-        setParticipantCount(data.session.participants?.length || 0);
-      })
-      .catch(() => toast.error('Failed to load session'))
-      .finally(() => setLoading(false));
+  const fetchSession = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/session/${sessionId}`);
+      const data = await res.json();
+      if (!res.ok) return;
+
+      setSession(data.session);
+      setState(data.session.state);
+      setCurrentIndex(data.session.currentQuestionIndex ?? 0);
+      setParticipantCount(data.session.participants?.length || 0);
+
+      // Count answers for current question
+      if (data.session.session_questions) {
+        const currentSQ = data.session.session_questions[data.session.currentQuestionIndex ?? 0];
+        if (currentSQ) {
+          // Count student_answers for this question
+          const qId = currentSQ.questionId;
+          const answered = (data.session.participants || []).filter((p: any) => p.totalScore !== undefined).length;
+          // Rough count - we'll get precise from answer count API if needed
+        }
+      }
+    } catch {
+      // Silent - polling will retry
+    } finally {
+      setLoading(false);
+    }
   }, [sessionId]);
 
-  // Socket events
+  // Initial fetch + polling
   useEffect(() => {
-    if (!socket) return;
-
-    socket.emit('JOIN_SESSION', { sessionId, participantId: 'instructor' });
-
-    socket.on('SESSION_STATE_CHANGE', ({ state: s, currentQuestionIndex }: { state: string; currentQuestionIndex: number }) => {
-      setState(s);
-      setCurrentIndex(currentQuestionIndex);
-      setAnswerCount(0);
-    });
-
-    socket.on('PARTICIPANT_JOINED', ({ count }: { count: number }) => setParticipantCount(count));
-    socket.on('PARTICIPANT_LEFT', ({ count }: { count: number }) => setParticipantCount(count));
-    socket.on('ANSWER_COUNT_UPDATE', ({ count }: { count: number }) => setAnswerCount(count));
-    socket.on('TIMER_SYNC', ({ remaining }: { remaining: number }) => setTimer(remaining));
-
+    fetchSession();
+    pollRef.current = setInterval(fetchSession, 3000);
     return () => {
-      socket.off('SESSION_STATE_CHANGE');
-      socket.off('PARTICIPANT_JOINED');
-      socket.off('PARTICIPANT_LEFT');
-      socket.off('ANSWER_COUNT_UPDATE');
-      socket.off('TIMER_SYNC');
+      if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [socket, sessionId]);
+  }, [fetchSession]);
 
-  const startSession = useCallback(() => {
-    const timePerQuestion = session?.quiz?.timePerQuestion || 30;
-    emit('START_SESSION', { sessionId, timePerQuestion });
-  }, [emit, sessionId, session]);
-
-  const nextQuestion = useCallback(() => {
-    const timePerQuestion = session?.quiz?.timePerQuestion || 30;
-    emit('NEXT_QUESTION', { sessionId, timePerQuestion });
-  }, [emit, sessionId, session]);
-
-  const lockQuestion = useCallback(() => {
-    emit('LOCK_QUESTION', { sessionId });
-  }, [emit, sessionId]);
-
-  const showResults = useCallback(() => {
-    emit('SHOW_RESULTS', { sessionId });
-  }, [emit, sessionId]);
-
-  const endSession = useCallback(() => {
-    if (confirm('End this session?')) {
-      emit('END_SESSION', { sessionId });
+  // Session control actions
+  async function sessionAction(action: string) {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/session/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Action failed');
+        return;
+      }
+      // Immediately update local state
+      setState(data.session.state);
+      setCurrentIndex(data.session.currentQuestionIndex ?? 0);
+      // Trigger a fresh poll
+      fetchSession();
+    } catch {
+      toast.error('Action failed');
+    } finally {
+      setActionLoading(false);
     }
-  }, [emit, sessionId]);
+  }
 
   if (loading || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
       </div>
     );
   }
@@ -119,26 +116,11 @@ export default function HostSessionPage() {
         <div className="container flex items-center justify-between h-14 px-4">
           <div className="flex items-center gap-4">
             <h1 className="font-bold truncate max-w-xs">{session.quiz?.title}</h1>
-            <Badge variant={isConnected ? 'success' : 'destructive'} className="flex items-center gap-1">
-              <Wifi className="h-3 w-3" /> {isConnected ? 'Connected' : 'Disconnected'}
+            <Badge variant="success" className="flex items-center gap-1">
+              <CheckCircle className="h-3 w-3" /> Live
             </Badge>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1 bg-muted rounded-md">
-              <span className="text-sm text-muted-foreground">Code:</span>
-              <span className="font-mono font-bold text-lg">{session.joinCode}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => {
-                  navigator.clipboard.writeText(session.joinCode);
-                  toast.success('Code copied!');
-                }}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </div>
             <div className="flex items-center gap-1 text-sm">
               <Users className="h-4 w-4" />
               <span className="font-bold">{participantCount}</span>
@@ -152,15 +134,10 @@ export default function HostSessionPage() {
         {state === 'WAITING' && (
           <div className="text-center py-20 space-y-8">
             <div>
-              <h2 className="text-4xl font-bold mb-4">Waiting for Students</h2>
+              <h2 className="text-4xl font-bold mb-4">Ready to Start</h2>
               <p className="text-xl text-muted-foreground mb-2">
-                Share the join code with your students
+                {totalQuestions} questions prepared
               </p>
-              <div className="inline-block bg-muted rounded-2xl px-12 py-6 mt-4">
-                <p className="text-6xl font-mono font-extrabold tracking-[0.3em] text-primary">
-                  {session.joinCode}
-                </p>
-              </div>
             </div>
             <div className="flex items-center justify-center gap-2 text-lg">
               <Users className="h-6 w-6 text-primary" />
@@ -169,12 +146,13 @@ export default function HostSessionPage() {
             </div>
             <Button
               variant="arena"
-              size="xl"
-              onClick={startSession}
-              disabled={participantCount === 0}
-              className="animate-pulse-glow"
+              size="lg"
+              onClick={() => sessionAction('start')}
+              disabled={actionLoading}
+              className="text-lg px-8 py-6"
             >
-              <Play className="mr-2 h-6 w-6" /> Start Quiz
+              {actionLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-2 h-6 w-6" />}
+              Start Quiz
             </Button>
           </div>
         )}
@@ -192,16 +170,6 @@ export default function HostSessionPage() {
               </Badge>
             </div>
             <Progress value={((currentIndex + 1) / totalQuestions) * 100} className="h-2" />
-
-            {/* Timer */}
-            {state === 'QUESTION_ACTIVE' && timer > 0 && (
-              <div className="flex items-center justify-center gap-2">
-                <Clock className="h-5 w-5 text-primary" />
-                <span className={`text-3xl font-mono font-bold ${timer <= 5 ? 'text-destructive animate-pulse' : ''}`}>
-                  {timer}s
-                </span>
-              </div>
-            )}
 
             {/* Question */}
             <Card>
@@ -228,7 +196,7 @@ export default function HostSessionPage() {
                         key={opt.id}
                         className={`p-3 rounded-lg border ${
                           state === 'RESULTS' && opt.isCorrect
-                            ? 'border-green-500 bg-green-50'
+                            ? 'border-green-500 bg-green-50 dark:bg-green-950'
                             : 'border-border'
                         }`}
                       >
@@ -255,29 +223,20 @@ export default function HostSessionPage() {
                       <span className="text-muted-foreground">Language:</span>
                       <Badge variant="outline">{currentQuestion.optionsData.language || 'python'}</Badge>
                     </div>
-                    {currentQuestion.optionsData.testCases?.length > 0 && (
-                      <div className="text-sm text-muted-foreground">
-                        {currentQuestion.optionsData.testCases.length} test case(s) will be evaluated
-                      </div>
-                    )}
                     <p className="text-xs text-muted-foreground">
-                      Students are coding and executing their solutions in the Monaco editor
+                      Students are writing code solutions
                     </p>
                   </div>
                 )}
 
-                {/* Answer progress */}
+                {/* Participant count */}
                 <div className="mt-6 p-4 bg-muted rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">Responses</span>
+                    <span className="text-sm font-medium">Participants</span>
                     <span className="text-sm text-muted-foreground">
-                      {answerCount} / {participantCount}
+                      {participantCount} students
                     </span>
                   </div>
-                  <Progress
-                    value={participantCount > 0 ? (answerCount / participantCount) * 100 : 0}
-                    className="h-3"
-                  />
                 </div>
               </CardContent>
             </Card>
@@ -285,26 +244,30 @@ export default function HostSessionPage() {
             {/* Controls */}
             <div className="flex justify-center gap-3">
               {state === 'QUESTION_ACTIVE' && (
-                <Button variant="destructive" onClick={lockQuestion}>
-                  <Lock className="mr-2 h-4 w-4" /> Lock Answers
+                <Button variant="destructive" onClick={() => sessionAction('lock')} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
+                  Lock Answers
                 </Button>
               )}
               {state === 'LOCKED' && (
-                <Button onClick={showResults}>
-                  <BarChart3 className="mr-2 h-4 w-4" /> Show Results
+                <Button onClick={() => sessionAction('results')} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}
+                  Show Results
                 </Button>
               )}
               {state === 'RESULTS' && currentIndex < totalQuestions - 1 && (
-                <Button variant="arena" onClick={nextQuestion}>
-                  <SkipForward className="mr-2 h-4 w-4" /> Next Question
+                <Button variant="arena" onClick={() => sessionAction('next')} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SkipForward className="mr-2 h-4 w-4" />}
+                  Next Question
                 </Button>
               )}
               {state === 'RESULTS' && currentIndex >= totalQuestions - 1 && (
-                <Button variant="arena" onClick={endSession}>
-                  <Trophy className="mr-2 h-4 w-4" /> End & Show Leaderboard
+                <Button variant="arena" onClick={() => sessionAction('end')} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trophy className="mr-2 h-4 w-4" />}
+                  End & Show Leaderboard
                 </Button>
               )}
-              <Button variant="outline" onClick={endSession}>
+              <Button variant="outline" onClick={() => { if (confirm('End this session?')) sessionAction('end'); }} disabled={actionLoading}>
                 <Square className="mr-2 h-4 w-4" /> End Session
               </Button>
             </div>
@@ -320,7 +283,7 @@ export default function HostSessionPage() {
               {participantCount} students participated
             </p>
             <div className="flex justify-center gap-4">
-              <a href={`/api/analytics/session/${sessionId}`}>
+              <a href={`/dashboard/analytics/${sessionId}`}>
                 <Button variant="arena" size="lg">
                   <BarChart3 className="mr-2 h-5 w-5" /> View Full Analytics
                 </Button>

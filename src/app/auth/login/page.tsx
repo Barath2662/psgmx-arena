@@ -16,9 +16,9 @@ function isRegisterNumber(input: string): boolean {
   return /^\d{2}MX\d{3}$/i.test(input.trim());
 }
 
-/** Convert register number to synthetic email for Supabase Auth */
-function toSyntheticEmail(regNo: string): string {
-  return `${regNo.toLowerCase()}@student.psgmx`;
+/** Convert register number to email for Supabase Auth */
+function toStudentEmail(regNo: string): string {
+  return `${regNo.toLowerCase()}@psgtech.ac.in`;
 }
 
 export default function LoginPage() {
@@ -35,9 +35,9 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // If input looks like a register number, convert to synthetic email
+      // If input looks like a register number, convert to student email
       const email = isRegisterNumber(input)
-        ? toSyntheticEmail(input)
+        ? toStudentEmail(input)
         : input;
 
       const { error } = await supabase.auth.signInWithPassword({

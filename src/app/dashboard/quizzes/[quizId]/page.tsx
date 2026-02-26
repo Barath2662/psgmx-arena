@@ -181,15 +181,17 @@ export default function QuizEditPage() {
 
   async function publishQuiz() {
     try {
-      await fetch(`/api/quiz/${quizId}`, {
+      const res = await fetch(`/api/quiz/${quizId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'PUBLISHED' }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to publish');
       setQuiz((prev: any) => ({ ...prev, status: 'PUBLISHED' }));
       toast.success('Quiz published!');
-    } catch {
-      toast.error('Failed to publish');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to publish');
     }
   }
 
