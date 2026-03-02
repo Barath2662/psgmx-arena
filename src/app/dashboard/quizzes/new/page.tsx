@@ -18,7 +18,7 @@ export default function NewQuizPage() {
     title: '',
     description: '',
     mode: 'LIVE',
-    timePerQuestion: 30,
+    timeLimitMinutes: 30,
     maxAttempts: 1,
     shuffleQuestions: false,
     shuffleOptions: false,
@@ -27,6 +27,8 @@ export default function NewQuizPage() {
     enableLeaderboard: true,
     enablePowerUps: false,
     passingScore: 50,
+    scheduledStartTime: '',
+    scheduledEndTime: '',
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -37,7 +39,12 @@ export default function NewQuizPage() {
       const res = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          timePerQuestion: form.timeLimitMinutes * 60, // convert minutes to seconds
+          scheduledStartTime: form.scheduledStartTime || undefined,
+          scheduledEndTime: form.scheduledEndTime || undefined,
+        }),
       });
 
       const data = await res.json();
@@ -118,13 +125,13 @@ export default function NewQuizPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Time per Question (seconds)</Label>
+                <Label>Total Time Limit (minutes)</Label>
                 <Input
                   type="number"
-                  min={5}
-                  max={600}
-                  value={form.timePerQuestion}
-                  onChange={(e) => setForm({ ...form, timePerQuestion: parseInt(e.target.value) })}
+                  min={1}
+                  max={120}
+                  value={form.timeLimitMinutes}
+                  onChange={(e) => setForm({ ...form, timeLimitMinutes: parseInt(e.target.value) || 30 })}
                 />
               </div>
               <div className="space-y-2">
@@ -135,6 +142,26 @@ export default function NewQuizPage() {
                   max={10}
                   value={form.maxAttempts}
                   onChange={(e) => setForm({ ...form, maxAttempts: parseInt(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            {/* Scheduling */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Scheduled Start Time (optional)</Label>
+                <Input
+                  type="datetime-local"
+                  value={form.scheduledStartTime}
+                  onChange={(e) => setForm({ ...form, scheduledStartTime: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Scheduled End Time (optional)</Label>
+                <Input
+                  type="datetime-local"
+                  value={form.scheduledEndTime}
+                  onChange={(e) => setForm({ ...form, scheduledEndTime: e.target.value ? new Date(e.target.value).toISOString() : '' })}
                 />
               </div>
             </div>

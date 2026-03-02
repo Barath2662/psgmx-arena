@@ -12,7 +12,7 @@ export const createQuizSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(200),
   description: z.string().max(2000).optional(),
   mode: z.enum(['LIVE', 'SELF_PACED']).default('LIVE'),
-  timePerQuestion: z.number().min(5).max(600).default(30),
+  timePerQuestion: z.number().min(1).max(7200).default(1800),
   maxAttempts: z.number().min(1).max(10).default(1),
   shuffleQuestions: z.boolean().default(false),
   shuffleOptions: z.boolean().default(false),

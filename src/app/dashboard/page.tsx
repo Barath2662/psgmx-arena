@@ -323,19 +323,38 @@ function InstructorDashboard() {
 // ─── STUDENT DASHBOARD ──────────────────────────────────
 
 function StudentDashboard({ userName }: { userName: string }) {
+  const { user } = useAuth();
   const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [myParticipations, setMyParticipations] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState<'live' | 'upcoming' | 'completed'>('live');
   const router = useRouter();
 
   useEffect(() => {
-    fetch('/api/quiz?status=PUBLISHED&limit=50')
-      .then((r) => r.json())
-      .then((data) => setQuizzes(data.quizzes || []))
+    Promise.all([
+      fetch('/api/quiz?status=PUBLISHED&limit=50').then((r) => r.json()),
+      fetch('/api/session?limit=200').then((r) => r.json()),
+    ])
+      .then(([qData, sData]) => {
+        setQuizzes(qData.quizzes || []);
+        const allSessions = sData.sessions || [];
+        setSessions(allSessions);
+
+        // Build set of session IDs where current user participated
+        const participated = new Set<string>();
+        allSessions.forEach((s: any) => {
+          if (s.participants?.some((p: any) => p.userId === user?.id)) {
+            participated.add(s.id);
+          }
+        });
+        setMyParticipations(participated);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [user?.id]);
 
   const joinQuiz = async (quizId: string) => {
     setJoining(quizId);
@@ -355,6 +374,36 @@ function StudentDashboard({ userName }: { userName: string }) {
     }
   };
 
+  // Categorize quizzes
+  const now = new Date();
+  const liveQuizzes: any[] = [];
+  const upcomingQuizzes: any[] = [];
+  const completedQuizzes: any[] = [];
+
+  quizzes.forEach((q) => {
+    // Check if user completed any session of this quiz
+    const quizSessions = sessions.filter((s: any) => s.quizId === q.id);
+    const completedSession = quizSessions.find(
+      (s: any) => s.state === 'COMPLETED' && myParticipations.has(s.id)
+    );
+    const liveSession = quizSessions.find(
+      (s: any) => s.state === 'WAITING' || s.state === 'QUESTION_ACTIVE'
+    );
+
+    if (completedSession) {
+      completedQuizzes.push({ ...q, _session: completedSession });
+    } else if (liveSession) {
+      liveQuizzes.push({ ...q, _session: liveSession });
+    } else if (q.scheduledStartTime && new Date(q.scheduledStartTime) > now) {
+      upcomingQuizzes.push(q);
+    } else {
+      // No active session and no schedule — treat as upcoming/available
+      upcomingQuizzes.push(q);
+    }
+  });
+
+  const tabData = tab === 'live' ? liveQuizzes : tab === 'upcoming' ? upcomingQuizzes : completedQuizzes;
+
   return (
     <div className="space-y-8">
       {/* Welcome banner */}
@@ -364,7 +413,7 @@ function StudentDashboard({ userName }: { userName: string }) {
             Welcome, {userName}! <span className="animate-pulse">👋</span>
           </h1>
           <p className="text-muted-foreground mt-2 text-lg">
-            Published quizzes will appear below. Join when the instructor starts the session.
+            Your quizzes are organized below. Join live tests or check your completed ones.
           </p>
           <div className="flex gap-3 mt-6">
             <Link href="/dashboard/leaderboard">
@@ -385,59 +434,128 @@ function StudentDashboard({ userName }: { userName: string }) {
         </div>
       )}
 
-      {/* Published Quizzes */}
+      {/* Tab buttons */}
+      <div className="flex gap-1 bg-muted rounded-lg p-1 w-fit">
+        {[
+          { key: 'live' as const, label: 'Live Tests', count: liveQuizzes.length },
+          { key: 'upcoming' as const, label: 'Upcoming', count: upcomingQuizzes.length },
+          { key: 'completed' as const, label: 'Completed', count: completedQuizzes.length },
+        ].map((t) => (
+          <Button
+            key={t.key}
+            size="sm"
+            variant={tab === t.key ? 'default' : 'ghost'}
+            onClick={() => setTab(t.key)}
+            className="text-xs"
+          >
+            {t.label}
+            {t.count > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
+                {t.count}
+              </Badge>
+            )}
+          </Button>
+        ))}
+      </div>
+
+      {/* Quiz list */}
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BookOpen className="h-5 w-5 text-primary" /> Available Quizzes
+            {tab === 'live' && <><Play className="h-5 w-5 text-green-500" /> Live Tests</>}
+            {tab === 'upcoming' && <><Calendar className="h-5 w-5 text-blue-500" /> Upcoming Tests</>}
+            {tab === 'completed' && <><Star className="h-5 w-5 text-yellow-500" /> Completed Tests</>}
           </CardTitle>
-          <CardDescription>Click Join to enter a quiz when the instructor starts it</CardDescription>
+          <CardDescription>
+            {tab === 'live' && 'Tests currently in progress — join now!'}
+            {tab === 'upcoming' && 'Tests scheduled for later or not yet started'}
+            {tab === 'completed' && 'Tests you have already taken'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-muted-foreground text-center py-8">Loading quizzes...</p>
-          ) : quizzes.length === 0 ? (
+          ) : tabData.length === 0 ? (
             <div className="text-center py-8">
               <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No published quizzes yet</p>
-              <p className="text-xs text-muted-foreground mt-1">Check back later</p>
+              <p className="text-muted-foreground">
+                {tab === 'live' ? 'No live tests right now' : tab === 'upcoming' ? 'No upcoming tests' : 'No completed tests yet'}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {quizzes.map((q: any) => (
+              {tabData.map((q: any) => (
                 <div
                   key={q.id}
                   className="flex items-center justify-between p-4 border rounded-xl hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{q.title}</p>
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                    {q.description && (
+                      <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{q.description}</p>
+                    )}
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1 flex-wrap">
                       <span className="flex items-center gap-1">
                         <BookOpen className="h-3 w-3" />
                         {q.questions?.length ?? 0} questions
                       </span>
+                      {q.timePerQuestion && (
+                        <span className="flex items-center gap-1">
+                          ⏱️ {Math.round(q.timePerQuestion / 60)} min
+                        </span>
+                      )}
                       {q.instructor?.name && (
                         <span className="flex items-center gap-1">
                           <GraduationCap className="h-3 w-3" />
                           {q.instructor.name}
                         </span>
                       )}
+                      {tab === 'upcoming' && q.scheduledStartTime && (
+                        <span className="flex items-center gap-1 text-blue-500">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(q.scheduledStartTime).toLocaleString()}
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <Button
-                    variant="arena"
-                    size="sm"
-                    onClick={() => joinQuiz(q.id)}
-                    disabled={joining === q.id}
-                  >
-                    {joining === q.id ? (
-                      'Joining...'
-                    ) : (
-                      <>
-                        <Play className="mr-1 h-4 w-4" /> Join
-                      </>
-                    )}
-                  </Button>
+                  {tab === 'live' && (
+                    <Button
+                      variant="arena"
+                      size="sm"
+                      onClick={() => joinQuiz(q.id)}
+                      disabled={joining === q.id}
+                    >
+                      {joining === q.id ? (
+                        'Joining...'
+                      ) : (
+                        <>
+                          <Play className="mr-1 h-4 w-4" /> Join
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {tab === 'upcoming' && (
+                    <Badge variant="outline" className="text-xs">
+                      {q.scheduledStartTime ? 'Scheduled' : 'Not Started'}
+                    </Badge>
+                  )}
+                  {tab === 'completed' && q._session && (
+                    <div className="text-right">
+                      {(() => {
+                        const part = q._session.participants?.find(
+                          (p: any) => p.userId === user?.id
+                        );
+                        return part ? (
+                          <div>
+                            <p className="text-lg font-bold text-primary">{part.totalScore ?? 0}</p>
+                            <p className="text-xs text-muted-foreground">{part.correctCount ?? 0} correct</p>
+                          </div>
+                        ) : (
+                          <Badge variant="secondary">Done</Badge>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

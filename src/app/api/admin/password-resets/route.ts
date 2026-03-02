@@ -3,8 +3,6 @@ import { getAuthUser, isAdminRole } from '@/lib/auth';
 import { db, Tables } from '@/lib/db';
 import { createAdminClient } from '@/lib/supabase-admin';
 
-const DEFAULT_PASSWORD = 'Psgmx123';
-
 // GET /api/admin/password-resets - List password reset requests
 export async function GET(req: NextRequest) {
   try {
@@ -64,12 +62,19 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'APPROVED') {
-      // Reset password in Supabase to default
+      // Derive the new password from the register number (format: 00MX000)
+      // If user has an email like 23mx105@psgtech.ac.in, the password becomes 23MX105
+      const userEmail = resetRequest.user?.email || '';
+      const prefix = userEmail.split('@')[0] || '';
+      const isRegNo = /^\d{2}mx\d{3}$/i.test(prefix);
+      const newPassword = isRegNo ? prefix.toUpperCase() : 'Psgmx123'; // fallback for non-reg-no accounts
+
+      // Reset password in Supabase
       if (resetRequest.user?.supabaseId) {
         const supabaseAdmin = createAdminClient();
         const { error: supabaseError } = await supabaseAdmin.auth.admin.updateUserById(
           resetRequest.user.supabaseId,
-          { password: DEFAULT_PASSWORD }
+          { password: newPassword }
         );
 
         if (supabaseError) {
@@ -100,7 +105,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       message: action === 'APPROVED'
-        ? 'Password reset to default. User must change it on next login.'
+        ? 'Password reset to register number. User must change it on next login.'
         : 'Password reset request rejected.',
     });
   } catch (error) {

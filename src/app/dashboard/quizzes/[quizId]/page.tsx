@@ -754,8 +754,8 @@ export default function QuizEditPage() {
                   <p className="text-sm font-medium">{quiz.mode}</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Time per Question</Label>
-                  <p className="text-sm font-medium">{quiz.timePerQuestion}s</p>
+                  <Label>Total Time Limit</Label>
+                  <p className="text-sm font-medium">{Math.round(quiz.timePerQuestion / 60)} min</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Max Attempts</Label>
@@ -765,6 +765,18 @@ export default function QuizEditPage() {
                   <Label>Passing Score</Label>
                   <p className="text-sm font-medium">{quiz.passingScore}%</p>
                 </div>
+                {quiz.scheduledStartTime && (
+                  <div className="space-y-2">
+                    <Label>Scheduled Start</Label>
+                    <p className="text-sm font-medium">{new Date(quiz.scheduledStartTime).toLocaleString()}</p>
+                  </div>
+                )}
+                {quiz.scheduledEndTime && (
+                  <div className="space-y-2">
+                    <Label>Scheduled End</Label>
+                    <p className="text-sm font-medium">{new Date(quiz.scheduledEndTime).toLocaleString()}</p>
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {quiz.shuffleQuestions && <Badge>Shuffle Questions</Badge>}

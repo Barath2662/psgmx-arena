@@ -7,8 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Trophy, Crown, Medal, Star, TrendingUp, Award, Calendar, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 
-type TabType = 'overall' | 'weekly' | 'session';
-
 interface LeaderboardEntry {
   rank: number;
   userId: string | null;
@@ -16,10 +14,7 @@ interface LeaderboardEntry {
   email?: string | null;
   totalScore?: number;
   score?: number;
-  avgScore?: number;
-  quizzesTaken?: number;
   correctCount?: number;
-  bestStreak?: number;
   streak?: number;
 }
 
@@ -32,14 +27,12 @@ interface SessionOption {
 
 export default function LeaderboardPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<TabType>('overall');
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState<SessionOption[]>([]);
   const [selectedSession, setSelectedSession] = useState<string>('');
-  const [periodInfo, setPeriodInfo] = useState<string>('');
 
-  // Fetch sessions for per-test selector
+  // Fetch completed sessions for test selector
   useEffect(() => {
     fetch('/api/session?state=COMPLETED')
       .then((r) => r.json())
@@ -51,95 +44,62 @@ export default function LeaderboardPage() {
           state: s.state,
         }));
         setSessions(opts);
+        // Auto-select first if available
+        if (opts.length > 0 && !selectedSession) {
+          setSelectedSession(opts[0].id);
+        }
       })
       .catch(console.error);
   }, []);
 
-  // Fetch leaderboard data when tab or selected session changes
+  // Fetch leaderboard when selected session changes
   useEffect(() => {
-    setLoading(true);
-    let url = '/api/leaderboard?type=' + tab;
-    if (tab === 'session' && selectedSession) {
-      url += '&id=' + selectedSession;
-    } else if (tab === 'session' && !selectedSession) {
+    if (!selectedSession) {
       setLeaderboard([]);
       setLoading(false);
       return;
     }
 
-    fetch(url)
+    setLoading(true);
+    fetch(`/api/leaderboard?type=session&id=${selectedSession}`)
       .then((r) => r.json())
       .then((data) => {
         setLeaderboard(data.leaderboard || []);
-        if (data.periodStart) {
-          setPeriodInfo(
-            `${new Date(data.periodStart).toLocaleDateString()} – ${new Date(data.periodEnd).toLocaleDateString()}`
-          );
-        } else {
-          setPeriodInfo('');
-        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [tab, selectedSession]);
+  }, [selectedSession]);
 
   // Find current user's position
   const myEntry = leaderboard.find((e) => e.userId === user?.id);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Trophy className="h-6 w-6 text-yellow-500" /> Leaderboard
-          </h1>
-          {periodInfo && (
-            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
-              <Calendar className="h-3 w-3" /> {periodInfo}
-            </p>
-          )}
-        </div>
-
-        {/* Tab buttons */}
-        <div className="flex gap-1 bg-muted rounded-lg p-1">
-          {([
-            { key: 'overall' as const, label: 'All Time' },
-            { key: 'weekly' as const, label: 'This Week' },
-            { key: 'session' as const, label: 'Per Test' },
-          ]).map((t) => (
-            <Button
-              key={t.key}
-              size="sm"
-              variant={tab === t.key ? 'default' : 'ghost'}
-              onClick={() => setTab(t.key)}
-              className="text-xs"
-            >
-              {t.label}
-            </Button>
-          ))}
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <Trophy className="h-6 w-6 text-yellow-500" /> Test Leaderboard
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">Select a test to view its leaderboard</p>
       </div>
 
-      {/* Session selector for per-test tab */}
-      {tab === 'session' && (
-        <Card>
-          <CardContent className="pt-4">
-            <label className="text-sm font-medium mb-2 block">Select a test</label>
-            <select
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={selectedSession}
-              onChange={(e) => setSelectedSession(e.target.value)}
-            >
-              <option value="">Choose a completed test...</option>
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title} ({s.joinCode})
-                </option>
-              ))}
-            </select>
-          </CardContent>
-        </Card>
-      )}
+      {/* Session selector */}
+      <Card>
+        <CardContent className="pt-4">
+          <label className="text-sm font-medium mb-2 block">Select a test</label>
+          <select
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={selectedSession}
+            onChange={(e) => setSelectedSession(e.target.value)}
+          >
+            <option value="">Choose a completed test...</option>
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title} ({s.joinCode})
+              </option>
+            ))}
+          </select>
+        </CardContent>
+      </Card>
 
       {/* My rank banner */}
       {myEntry && (
@@ -152,8 +112,8 @@ export default function LeaderboardPage() {
               <div>
                 <p className="font-semibold">Your Position</p>
                 <p className="text-sm text-muted-foreground">
-                  Score: {myEntry.totalScore ?? myEntry.score ?? 0}
-                  {myEntry.quizzesTaken != null && ` · ${myEntry.quizzesTaken} quizzes`}
+                  Score: {myEntry.score ?? myEntry.totalScore ?? 0}
+                  {myEntry.correctCount != null && ` · ${myEntry.correctCount} correct`}
                 </p>
               </div>
             </div>
@@ -182,7 +142,7 @@ export default function LeaderboardPage() {
                 <TrendingUp className="h-6 w-6 text-blue-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{leaderboard[0]?.totalScore ?? leaderboard[0]?.score ?? 0}</p>
+                <p className="text-2xl font-bold">{leaderboard[0]?.score ?? leaderboard[0]?.totalScore ?? 0}</p>
                 <p className="text-xs text-muted-foreground">Top Score</p>
               </div>
             </CardContent>
@@ -206,7 +166,7 @@ export default function LeaderboardPage() {
               <div>
                 <p className="text-2xl font-bold">
                   {Math.round(
-                    leaderboard.reduce((s, e) => s + (e.totalScore ?? e.score ?? 0), 0) /
+                    leaderboard.reduce((s, e) => s + (e.score ?? e.totalScore ?? 0), 0) /
                       leaderboard.length
                   )}
                 </p>
@@ -221,12 +181,7 @@ export default function LeaderboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-yellow-500" />
-            {tab === 'overall'
-              ? 'All-Time Leaderboard'
-              : tab === 'weekly'
-              ? 'Weekly Leaderboard'
-              : 'Test Leaderboard'}
+            <Star className="h-5 w-5 text-yellow-500" /> Test Leaderboard
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -236,9 +191,9 @@ export default function LeaderboardPage() {
             </div>
           ) : leaderboard.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              {tab === 'session' && !selectedSession
+              {!selectedSession
                 ? 'Select a test above to view its leaderboard'
-                : 'No leaderboard data yet. Complete some quizzes to appear here!'}
+                : 'No leaderboard data yet.'}
             </div>
           ) : (
             <div className="space-y-2">
@@ -279,20 +234,14 @@ export default function LeaderboardPage() {
                           )}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {entry.quizzesTaken != null && `${entry.quizzesTaken} quizzes`}
-                          {entry.correctCount != null && ` · ${entry.correctCount} correct`}
-                          {(entry.bestStreak ?? entry.streak ?? 0) > 0 &&
-                            ` · 🔥 ${entry.bestStreak ?? entry.streak} streak`}
+                          {entry.correctCount != null && `${entry.correctCount} correct`}
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-xl font-bold text-primary">
-                        {entry.totalScore ?? entry.score ?? 0}
+                        {entry.score ?? entry.totalScore ?? 0}
                       </p>
-                      {entry.avgScore != null && (
-                        <p className="text-xs text-muted-foreground">avg {entry.avgScore}</p>
-                      )}
                     </div>
                   </div>
                 );

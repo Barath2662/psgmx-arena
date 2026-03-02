@@ -2,7 +2,85 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, Tables, generateId } from '@/lib/db';
 import { submitAnswerSchema } from '@/lib/validations';
 
-// POST /api/session/[sessionId]/answer - Persist a student answer
+// ─── Grading logic ─────────────────────────────────────
+function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; score: number } {
+  const { type, correctAnswer, optionsData, points } = question;
+
+  switch (type) {
+    case 'MCQ':
+    case 'TRUE_FALSE': {
+      // answerData is the selected option ID
+      const options = optionsData?.options || [];
+      const selectedOption = options.find((o: any) => o.id === answerData);
+      const isCorrect = selectedOption?.isCorrect === true;
+      return { isCorrect, score: isCorrect ? points : 0 };
+    }
+
+    case 'MULTI_SELECT': {
+      // answerData is comma-separated option IDs
+      const selectedIds = new Set(String(answerData).split(',').filter(Boolean));
+      const correctIds = new Set(
+        (optionsData?.options || [])
+          .filter((o: any) => o.isCorrect)
+          .map((o: any) => o.id)
+      );
+      const isCorrect =
+        selectedIds.size === correctIds.size &&
+        Array.from(selectedIds).every((id) => correctIds.has(id));
+      return { isCorrect, score: isCorrect ? points : 0 };
+    }
+
+    case 'FILL_BLANK': {
+      const answer = String(answerData).trim().toLowerCase();
+      const correct = String(correctAnswer || '').trim().toLowerCase();
+      const blanks = optionsData?.blanks || [];
+      let isCorrect = answer === correct;
+      if (!isCorrect && blanks.length > 0) {
+        const accepted: string[] = blanks[0]?.acceptedAnswers || [];
+        isCorrect = accepted.some((a: string) => String(a).trim().toLowerCase() === answer);
+      }
+      return { isCorrect, score: isCorrect ? points : 0 };
+    }
+
+    case 'NUMERIC': {
+      const answer = parseFloat(String(answerData));
+      const correct = parseFloat(String(correctAnswer || optionsData?.answer || '0'));
+      const tolerance = optionsData?.tolerance || 0;
+      if (isNaN(answer) || isNaN(correct)) return { isCorrect: false, score: 0 };
+      const isCorrect = Math.abs(answer - correct) <= tolerance;
+      return { isCorrect, score: isCorrect ? points : 0 };
+    }
+
+    case 'SHORT_ANSWER': {
+      const answer = String(answerData).trim().toLowerCase();
+      const correct = String(correctAnswer || '').trim().toLowerCase();
+      const isCorrect = answer !== '' && answer === correct;
+      return { isCorrect, score: isCorrect ? points : 0 };
+    }
+
+    default:
+      // CODE, LONG_ANSWER, etc. — needs manual grading
+      return { isCorrect: false, score: 0 };
+  }
+}
+
+// ─── Recalculate participant totals ────────────────────
+async function updateParticipantTotals(participantId: string) {
+  const { data: answers } = await db
+    .from(Tables.student_answers)
+    .select('isCorrect, score')
+    .eq('participantId', participantId);
+
+  const totalScore = (answers || []).reduce((sum: number, a: any) => sum + (a.score || 0), 0);
+  const correctCount = (answers || []).filter((a: any) => a.isCorrect === true).length;
+
+  await db
+    .from(Tables.session_participants)
+    .update({ totalScore, correctCount })
+    .eq('id', participantId);
+}
+
+// POST /api/session/[sessionId]/answer - Persist and grade a student answer
 export async function POST(
   req: NextRequest,
   { params }: { params: { sessionId: string } }
@@ -47,6 +125,20 @@ export async function POST(
       return NextResponse.json({ error: 'Participant not found' }, { status: 404 });
     }
 
+    // Fetch the question for grading
+    const { data: question, error: qError } = await db
+      .from(Tables.questions)
+      .select('id, type, correctAnswer, optionsData, points')
+      .eq('id', questionId)
+      .single();
+
+    if (qError || !question) {
+      return NextResponse.json({ error: 'Question not found' }, { status: 404 });
+    }
+
+    // Grade the answer
+    const { isCorrect, score } = gradeAnswer(question, answerData);
+
     // Check if answer already exists (upsert)
     const { data: existingAnswer } = await db
       .from(Tables.student_answers)
@@ -55,6 +147,8 @@ export async function POST(
       .eq('questionId', questionId)
       .single();
 
+    let answer;
+
     if (existingAnswer) {
       // Update existing answer
       const { data: updated, error: updateError } = await db
@@ -62,6 +156,8 @@ export async function POST(
         .update({
           answerData,
           timeTakenMs,
+          isCorrect,
+          score,
           submittedAt: new Date().toISOString(),
         })
         .eq('id', existingAnswer.id)
@@ -69,25 +165,32 @@ export async function POST(
         .single();
 
       if (updateError) throw updateError;
-      return NextResponse.json({ answer: updated });
+      answer = updated;
+    } else {
+      // Insert new answer
+      const { data: created, error: insertError } = await db
+        .from(Tables.student_answers)
+        .insert({
+          id: generateId(),
+          participantId,
+          questionId,
+          userId: participant.userId || null,
+          answerData,
+          timeTakenMs,
+          isCorrect,
+          score,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+      answer = created;
     }
 
-    // Insert new answer
-    const { data: answer, error: insertError } = await db
-      .from(Tables.student_answers)
-      .insert({
-        id: generateId(),
-        participantId,
-        questionId,
-        userId: participant.userId || null,
-        answerData,
-        timeTakenMs,
-      })
-      .select()
-      .single();
+    // Recalculate participant scores
+    await updateParticipantTotals(participantId);
 
-    if (insertError) throw insertError;
-    return NextResponse.json({ answer }, { status: 201 });
+    return NextResponse.json({ answer, isCorrect, score }, { status: existingAnswer ? 200 : 201 });
   } catch (error) {
     console.error('Error saving answer:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -16,6 +16,9 @@ import {
   ArrowLeft,
   CheckCircle,
   XCircle,
+  ChevronDown,
+  ChevronRight,
+  User,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -25,12 +28,12 @@ export default function SessionAnalyticsPage() {
   const sessionId = params.sessionId as string;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/analytics/session/${sessionId}`)
       .then((r) => r.json())
       .then((json) => {
-        // API returns { analytics: { ... } } — unwrap it
         setData(json.analytics || json);
       })
       .catch(() => toast.error('Failed to load analytics'))
@@ -39,10 +42,11 @@ export default function SessionAnalyticsPage() {
 
   const exportCSV = () => {
     if (!data) return;
-    const rows = [['Student', 'Score', 'Correct', 'Total Questions', 'Accuracy (%)']];
+    const rows = [['Student', 'Email', 'Score', 'Correct', 'Total Questions', 'Accuracy (%)']];
     (studentReports || []).forEach((p: any) => {
       rows.push([
         p.name || 'Guest',
+        p.email || '',
         p.totalScore,
         p.correctCount,
         p.totalQuestions,
@@ -85,7 +89,6 @@ export default function SessionAnalyticsPage() {
     endedAt,
   } = data;
 
-  // Build compatible structures for the UI
   const participants = studentReports;
   const overallStats = {
     totalParticipants,
@@ -235,22 +238,26 @@ export default function SessionAnalyticsPage() {
         </CardContent>
       </Card>
 
-      {/* Student Detail Table */}
+      {/* User-wise Analytics — Expandable Student Results */}
       <Card>
         <CardHeader>
-          <CardTitle>Student Results</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <User className="h-5 w-5" /> User-wise Analytics
+          </CardTitle>
         </CardHeader>
         <CardContent>
+          <p className="text-xs text-muted-foreground mb-4">Click on a student row to view their per-question breakdown</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left">
+                  <th className="p-2 w-8"></th>
                   <th className="p-2">Rank</th>
                   <th className="p-2">Student</th>
+                  <th className="p-2">Email</th>
                   <th className="p-2">Score</th>
                   <th className="p-2">Correct</th>
                   <th className="p-2">Wrong</th>
-                  <th className="p-2">Avg Time</th>
                   <th className="p-2">Accuracy</th>
                 </tr>
               </thead>
@@ -260,23 +267,88 @@ export default function SessionAnalyticsPage() {
                   .map((p: any, i: number) => {
                     const wrongCount = (p.totalQuestions || 0) - (p.correctCount || 0);
                     const accuracy = p.accuracy || 0;
+                    const isExpanded = expandedStudent === p.id;
                     return (
-                      <tr key={p.id || i} className="border-b hover:bg-muted/50">
-                        <td className="p-2 font-mono">
-                          {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
-                        </td>
-                        <td className="p-2 font-medium">{p.name || 'Guest'}</td>
-                        <td className="p-2 font-bold text-primary">{p.totalScore || 0}</td>
-                        <td className="p-2 text-green-600">{p.correctCount || 0}</td>
-                        <td className="p-2 text-red-400">{wrongCount}</td>
-                        <td className="p-2">—</td>
-                        <td className="p-2">
-                          <div className="flex items-center gap-2">
-                            <Progress value={accuracy} className="w-16 h-2" />
-                            <span>{accuracy}%</span>
-                          </div>
-                        </td>
-                      </tr>
+                      <>
+                        <tr
+                          key={p.id || i}
+                          className="border-b hover:bg-muted/50 cursor-pointer"
+                          onClick={() => setExpandedStudent(isExpanded ? null : p.id)}
+                        >
+                          <td className="p-2">
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </td>
+                          <td className="p-2 font-mono">
+                            {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+                          </td>
+                          <td className="p-2 font-medium">{p.name || 'Guest'}</td>
+                          <td className="p-2 text-muted-foreground text-xs">{p.email || '—'}</td>
+                          <td className="p-2 font-bold text-primary">{p.totalScore || 0}</td>
+                          <td className="p-2 text-green-600">{p.correctCount || 0}</td>
+                          <td className="p-2 text-red-400">{wrongCount}</td>
+                          <td className="p-2">
+                            <div className="flex items-center gap-2">
+                              <Progress value={accuracy} className="w-16 h-2" />
+                              <span>{accuracy}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Expanded per-question details */}
+                        {isExpanded && (
+                          <tr key={`${p.id}-detail`}>
+                            <td colSpan={8} className="p-0">
+                              <div className="bg-muted/30 p-4 border-b">
+                                <p className="text-xs font-semibold mb-3 text-muted-foreground uppercase">
+                                  Per-question breakdown for {p.name}
+                                </p>
+                                <div className="grid gap-2">
+                                  {questionStats.map((q: any, qi: number) => {
+                                    const ans = (p.answers || []).find(
+                                      (a: any) => a.questionId === q.questionId
+                                    );
+                                    return (
+                                      <div
+                                        key={q.questionId}
+                                        className="flex items-center gap-3 text-sm p-2 rounded border bg-background"
+                                      >
+                                        <span className="font-mono text-xs w-8 text-muted-foreground">
+                                          Q{qi + 1}
+                                        </span>
+                                        <span className="flex-1 truncate">{q.title}</span>
+                                        {ans ? (
+                                          <>
+                                            {ans.isCorrect ? (
+                                              <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                                            ) : (
+                                              <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+                                            )}
+                                            <span className="text-xs font-medium w-12 text-right">
+                                              {ans.score ?? 0} pts
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="text-xs text-muted-foreground">
+                                              Not answered
+                                            </span>
+                                            <span className="text-xs font-medium w-12 text-right text-muted-foreground">
+                                              0 pts
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
               </tbody>

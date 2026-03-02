@@ -9,14 +9,12 @@ import { Progress } from '@/components/ui/progress';
 import {
   Users,
   Play,
-  SkipForward,
-  Lock,
-  BarChart3,
   Trophy,
   Square,
   Clock,
   CheckCircle,
   Loader2,
+  BarChart3,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -26,12 +24,13 @@ export default function HostSessionPage() {
 
   const [session, setSession] = useState<any>(null);
   const [state, setState] = useState('WAITING');
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [participantCount, setParticipantCount] = useState(0);
-  const [answerCount, setAnswerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [globalTimer, setGlobalTimer] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef<number>(0);
 
   // Fetch session data
   const fetchSession = useCallback(async () => {
@@ -42,22 +41,28 @@ export default function HostSessionPage() {
 
       setSession(data.session);
       setState(data.session.state);
-      setCurrentIndex(data.session.currentQuestionIndex ?? 0);
       setParticipantCount(data.session.participants?.length || 0);
 
-      // Count answers for current question
-      if (data.session.session_questions) {
-        const currentSQ = data.session.session_questions[data.session.currentQuestionIndex ?? 0];
-        if (currentSQ) {
-          // Count student_answers for this question
-          const qId = currentSQ.questionId;
-          const answered = (data.session.participants || []).filter((p: any) => p.totalScore !== undefined).length;
-          // Rough count - we'll get precise from answer count API if needed
-        }
+      // Set up timer for active session
+      if (data.session.state === 'QUESTION_ACTIVE' && data.session.startedAt && !startTimeRef.current) {
+        startTimeRef.current = new Date(data.session.startedAt).getTime();
+        const totalSeconds = data.session.quiz?.timePerQuestion || 1800;
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        const remaining = Math.max(0, totalSeconds - elapsed);
+        setGlobalTimer(remaining);
+
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+          setGlobalTimer((prev) => {
+            if (prev <= 1) {
+              if (timerRef.current) clearInterval(timerRef.current);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
       }
-    } catch {
-      // Silent - polling will retry
-    } finally {
+    } catch { /* silent */ } finally {
       setLoading(false);
     }
   }, [sessionId]);
@@ -68,6 +73,7 @@ export default function HostSessionPage() {
     pollRef.current = setInterval(fetchSession, 3000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [fetchSession]);
 
@@ -85,10 +91,7 @@ export default function HostSessionPage() {
         toast.error(data.error || 'Action failed');
         return;
       }
-      // Immediately update local state
       setState(data.session.state);
-      setCurrentIndex(data.session.currentQuestionIndex ?? 0);
-      // Trigger a fresh poll
       fetchSession();
     } catch {
       toast.error('Action failed');
@@ -96,6 +99,13 @@ export default function HostSessionPage() {
       setActionLoading(false);
     }
   }
+
+  // Format timer as MM:SS
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   if (loading || !session) {
     return (
@@ -106,7 +116,6 @@ export default function HostSessionPage() {
   }
 
   const questions = session.quiz?.questions || [];
-  const currentQuestion = questions[currentIndex];
   const totalQuestions = questions.length;
 
   return (
@@ -116,11 +125,18 @@ export default function HostSessionPage() {
         <div className="container flex items-center justify-between h-14 px-4">
           <div className="flex items-center gap-4">
             <h1 className="font-bold truncate max-w-xs">{session.quiz?.title}</h1>
-            <Badge variant="success" className="flex items-center gap-1">
-              <CheckCircle className="h-3 w-3" /> Live
-            </Badge>
+            {state === 'QUESTION_ACTIVE' && (
+              <Badge variant="success" className="flex items-center gap-1">
+                <CheckCircle className="h-3 w-3" /> Live
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-3">
+            {state === 'QUESTION_ACTIVE' && globalTimer > 0 && (
+              <div className={`flex items-center gap-1 text-lg font-mono font-bold ${globalTimer <= 60 ? 'text-destructive animate-pulse' : 'text-primary'}`}>
+                <Clock className="h-4 w-4" /> {formatTime(globalTimer)}
+              </div>
+            )}
             <div className="flex items-center gap-1 text-sm">
               <Users className="h-4 w-4" />
               <span className="font-bold">{participantCount}</span>
@@ -136,7 +152,10 @@ export default function HostSessionPage() {
             <div>
               <h2 className="text-4xl font-bold mb-4">Ready to Start</h2>
               <p className="text-xl text-muted-foreground mb-2">
-                {totalQuestions} questions prepared
+                {totalQuestions} questions &middot; {Math.round((session.quiz?.timePerQuestion || 1800) / 60)} minutes
+              </p>
+              <p className="text-lg text-muted-foreground">
+                Join Code: <span className="font-mono font-bold text-primary text-2xl">{session.joinCode}</span>
               </p>
             </div>
             <div className="flex items-center justify-center gap-2 text-lg">
@@ -157,118 +176,67 @@ export default function HostSessionPage() {
           </div>
         )}
 
-        {/* QUESTION ACTIVE / LOCKED / RESULTS */}
-        {['QUESTION_ACTIVE', 'LOCKED', 'RESULTS'].includes(state) && currentQuestion && (
+        {/* QUESTION ACTIVE */}
+        {state === 'QUESTION_ACTIVE' && (
           <div className="space-y-6">
-            {/* Progress */}
-            <div className="flex items-center justify-between text-sm">
-              <span>
-                Question {currentIndex + 1} of {totalQuestions}
-              </span>
-              <Badge variant="outline">
-                {currentQuestion.points} pts
-              </Badge>
-            </div>
-            <Progress value={((currentIndex + 1) / totalQuestions) * 100} className="h-2" />
-
-            {/* Question */}
             <Card>
               <CardHeader>
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="outline">
-                    {currentQuestion.type}
-                  </Badge>
-                  <Badge variant={state === 'QUESTION_ACTIVE' ? 'success' : state === 'LOCKED' ? 'warning' : 'default'}>
-                    {state === 'QUESTION_ACTIVE' ? 'Active' : state === 'LOCKED' ? 'Locked' : 'Results'}
-                  </Badge>
-                </div>
-                <CardTitle className="text-xl">{currentQuestion.title}</CardTitle>
-                {currentQuestion.description && (
-                  <p className="text-muted-foreground mt-2">{currentQuestion.description}</p>
-                )}
+                <CardTitle>Quiz In Progress</CardTitle>
               </CardHeader>
-              <CardContent>
-                {/* Show options for MCQ types */}
-                {currentQuestion.optionsData?.options && (
-                  <div className="space-y-2">
-                    {currentQuestion.optionsData.options.map((opt: any, i: number) => (
-                      <div
-                        key={opt.id}
-                        className={`p-3 rounded-lg border ${
-                          state === 'RESULTS' && opt.isCorrect
-                            ? 'border-green-500 bg-green-50 dark:bg-green-950'
-                            : 'border-border'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span>
-                            <span className="font-mono text-muted-foreground mr-2">
-                              {String.fromCharCode(65 + i)}.
-                            </span>
-                            {opt.text}
-                          </span>
-                          {state === 'RESULTS' && opt.isCorrect && (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-3xl font-bold text-primary">{totalQuestions}</p>
+                    <p className="text-sm text-muted-foreground">Questions</p>
                   </div>
-                )}
-
-                {/* Show CODE question info */}
-                {currentQuestion.type === 'CODE' && currentQuestion.optionsData && (
-                  <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-muted-foreground">Language:</span>
-                      <Badge variant="outline">{currentQuestion.optionsData.language || 'python'}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Students are writing code solutions
-                    </p>
+                  <div>
+                    <p className="text-3xl font-bold">{participantCount}</p>
+                    <p className="text-sm text-muted-foreground">Participants</p>
                   </div>
-                )}
-
-                {/* Participant count */}
-                <div className="mt-6 p-4 bg-muted rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">Participants</span>
-                    <span className="text-sm text-muted-foreground">
-                      {participantCount} students
-                    </span>
+                  <div>
+                    <p className="text-3xl font-bold font-mono">{formatTime(globalTimer)}</p>
+                    <p className="text-sm text-muted-foreground">Remaining</p>
                   </div>
                 </div>
+                <p className="text-center text-muted-foreground">
+                  Students are answering all questions freely. The quiz will end when the timer runs out or you end it manually.
+                </p>
               </CardContent>
             </Card>
 
-            {/* Controls */}
-            <div className="flex justify-center gap-3">
-              {state === 'QUESTION_ACTIVE' && (
-                <Button variant="destructive" onClick={() => sessionAction('lock')} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
-                  Lock Answers
-                </Button>
-              )}
-              {state === 'LOCKED' && (
-                <Button onClick={() => sessionAction('results')} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}
-                  Show Results
-                </Button>
-              )}
-              {state === 'RESULTS' && currentIndex < totalQuestions - 1 && (
-                <Button variant="arena" onClick={() => sessionAction('next')} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SkipForward className="mr-2 h-4 w-4" />}
-                  Next Question
-                </Button>
-              )}
-              {state === 'RESULTS' && currentIndex >= totalQuestions - 1 && (
-                <Button variant="arena" onClick={() => sessionAction('end')} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trophy className="mr-2 h-4 w-4" />}
-                  End & Show Leaderboard
-                </Button>
-              )}
-              <Button variant="outline" onClick={() => { if (confirm('End this session?')) sessionAction('end'); }} disabled={actionLoading}>
-                <Square className="mr-2 h-4 w-4" /> End Session
+            {/* All questions list */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Questions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {questions.map((q: any, i: number) => (
+                  <div key={q.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm text-muted-foreground w-6">Q{i + 1}</span>
+                      <div>
+                        <p className="text-sm font-medium truncate max-w-[400px]">{q.title}</p>
+                        <Badge variant="outline" className="text-xs">{q.type} &middot; {q.points}pts</Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-center">
+              <Button
+                variant="destructive"
+                size="lg"
+                onClick={() => {
+                  if (confirm('End this session? All student answers will be saved.')) {
+                    sessionAction('end');
+                  }
+                }}
+                disabled={actionLoading}
+              >
+                {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
+                End Quiz
               </Button>
             </div>
           </div>
