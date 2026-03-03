@@ -69,18 +69,39 @@ export async function POST(req: NextRequest) {
       const isRegNo = /^\d{2}mx\d{3}$/i.test(prefix);
       const newPassword = isRegNo ? prefix.toUpperCase() : 'Psgmx123'; // fallback for non-reg-no accounts
 
-      // Reset password in Supabase
-      if (resetRequest.user?.supabaseId) {
-        const supabaseAdmin = createAdminClient();
-        const { error: supabaseError } = await supabaseAdmin.auth.admin.updateUserById(
-          resetRequest.user.supabaseId,
-          { password: newPassword }
-        );
+      const supabaseAdmin = createAdminClient();
+      let supabaseId = resetRequest.user?.supabaseId;
 
-        if (supabaseError) {
-          console.error('Supabase password reset error:', supabaseError);
-          return NextResponse.json({ error: 'Failed to reset password in auth system' }, { status: 500 });
+      // If supabaseId is missing, look up the user in Supabase Auth by email
+      if (!supabaseId && userEmail) {
+        const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+        const authUser = listData?.users?.find((u: any) => u.email === userEmail);
+        if (authUser) {
+          supabaseId = authUser.id;
+          // Also update the supabaseId in our DB for future use
+          await db
+            .from(Tables.users)
+            .update({ supabaseId })
+            .eq('id', resetRequest.userId);
         }
+      }
+
+      if (!supabaseId) {
+        return NextResponse.json(
+          { error: 'Could not find user in auth system. Please recreate the account.' },
+          { status: 500 }
+        );
+      }
+
+      // Reset password in Supabase Auth
+      const { error: supabaseError } = await supabaseAdmin.auth.admin.updateUserById(
+        supabaseId,
+        { password: newPassword }
+      );
+
+      if (supabaseError) {
+        console.error('Supabase password reset error:', supabaseError);
+        return NextResponse.json({ error: 'Failed to reset password in auth system' }, { status: 500 });
       }
 
       // Set mustChangePassword = true

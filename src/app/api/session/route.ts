@@ -23,9 +23,19 @@ export async function GET(req: NextRequest) {
       .order('createdAt', { ascending: false })
       .limit(50);
 
-    if (!isAdminRole(user.role)) {
-      // Filter to sessions whose quiz belongs to this user
-      // We'll do a two-step: get user's quiz IDs first
+    if (user.role === 'STUDENT') {
+      // Students: show sessions for published quizzes only
+      const { data: publishedQuizzes } = await db
+        .from(Tables.quizzes)
+        .select('id')
+        .eq('status', 'PUBLISHED');
+      const quizIds = (publishedQuizzes || []).map((q: any) => q.id);
+      if (quizIds.length === 0) {
+        return NextResponse.json({ sessions: [] });
+      }
+      query = query.in('quizId', quizIds);
+    } else if (!isAdminRole(user.role)) {
+      // Instructor: filter to sessions whose quiz belongs to this user
       const { data: userQuizzes } = await db
         .from(Tables.quizzes)
         .select('id')

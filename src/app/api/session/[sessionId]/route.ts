@@ -43,6 +43,50 @@ export async function GET(
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
+    // Auto-start session if scheduled time has passed
+    if (quizSession.state === 'WAITING') {
+      const scheduledStart = quizSession.quiz?.scheduledStartTime;
+      if (scheduledStart && new Date() >= new Date(scheduledStart)) {
+        const timeLimit = quizSession.quiz?.timePerQuestion || 1800;
+        const { error: startError } = await db
+          .from(Tables.quiz_sessions)
+          .update({
+            state: 'QUESTION_ACTIVE',
+            currentQuestionIndex: 0,
+            startedAt: new Date().toISOString(),
+            questionStartedAt: new Date().toISOString(),
+          })
+          .eq('id', params.sessionId);
+
+        if (!startError) {
+          quizSession.state = 'QUESTION_ACTIVE';
+          quizSession.startedAt = new Date().toISOString();
+          quizSession.questionStartedAt = new Date().toISOString();
+          quizSession.currentQuestionIndex = 0;
+        }
+      }
+    }
+
+    // Auto-end session if overall time limit exceeded
+    if (quizSession.state === 'QUESTION_ACTIVE' && quizSession.startedAt) {
+      const timeLimit = quizSession.quiz?.timePerQuestion || 1800; // seconds
+      const elapsed = (Date.now() - new Date(quizSession.startedAt).getTime()) / 1000;
+      if (elapsed >= timeLimit) {
+        const { error: endError } = await db
+          .from(Tables.quiz_sessions)
+          .update({
+            state: 'COMPLETED',
+            endedAt: new Date().toISOString(),
+          })
+          .eq('id', params.sessionId);
+
+        if (!endError) {
+          quizSession.state = 'COMPLETED';
+          quizSession.endedAt = new Date().toISOString();
+        }
+      }
+    }
+
     // Strip correct answers for students during active session
     const user = await getAuthUser();
     const isManager = user ? canManageQuizzes(user.role) : false;

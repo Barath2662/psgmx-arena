@@ -12,7 +12,13 @@ function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; scor
       // answerData is the selected option ID
       const options = optionsData?.options || [];
       const selectedOption = options.find((o: any) => o.id === answerData);
-      const isCorrect = selectedOption?.isCorrect === true;
+      // Primary: check isCorrect flag on the option
+      let isCorrect = selectedOption?.isCorrect === true;
+      // Fallback: check against correctAnswer field (comma-separated correct IDs)
+      if (!isCorrect && correctAnswer) {
+        const correctIds = correctAnswer.split(',').map((s: string) => s.trim());
+        isCorrect = correctIds.includes(String(answerData));
+      }
       return { isCorrect, score: isCorrect ? points : 0 };
     }
 

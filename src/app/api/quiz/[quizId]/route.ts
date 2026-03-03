@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, isAdminRole } from '@/lib/auth';
-import { db, Tables } from '@/lib/db';
+import { db, Tables, generateId } from '@/lib/db';
 import { updateQuizSchema } from '@/lib/validations';
+import { generateJoinCode } from '@/lib/utils';
+import { setSessionState } from '@/lib/redis';
 
 // GET /api/quiz/[quizId]
 export async function GET(
@@ -93,6 +95,64 @@ export async function PATCH(
       .single();
 
     if (error) throw error;
+
+    // Auto-create session when quiz is published (schedule-based flow)
+    if (validation.data.status === 'PUBLISHED') {
+      const { data: existingSessions } = await db
+        .from(Tables.quiz_sessions)
+        .select('id')
+        .eq('quizId', params.quizId)
+        .neq('state', 'COMPLETED')
+        .limit(1);
+
+      if (!existingSessions || existingSessions.length === 0) {
+        // Get quiz questions
+        const { data: questions } = await db
+          .from(Tables.questions)
+          .select('id')
+          .eq('quizId', params.quizId)
+          .order('order', { ascending: true });
+
+        if (questions && questions.length > 0) {
+          // Generate unique join code
+          let joinCode = generateJoinCode();
+          let attempts = 0;
+          while (attempts < 5) {
+            const { data: codeExists } = await db
+              .from(Tables.quiz_sessions)
+              .select('id')
+              .eq('joinCode', joinCode)
+              .single();
+            if (!codeExists) break;
+            joinCode = generateJoinCode();
+            attempts++;
+          }
+
+          // Create session in WAITING state
+          const sessionId = generateId();
+          await db.from(Tables.quiz_sessions).insert({
+            id: sessionId,
+            quizId: params.quizId,
+            joinCode,
+            allowLateJoin: true,
+            guestMode: false,
+          });
+
+          // Create session_questions
+          const sessionQuestions = questions.map((q: any, index: number) => ({
+            id: generateId(),
+            sessionId,
+            questionId: q.id,
+            order: index,
+          }));
+          await db.from(Tables.session_questions).insert(sessionQuestions);
+
+          // Initialize session state
+          await setSessionState(sessionId, 'WAITING');
+        }
+      }
+    }
+
     return NextResponse.json({ quiz: updated });
   } catch (error) {
     console.error('Error updating quiz:', error);

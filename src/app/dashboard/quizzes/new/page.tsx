@@ -120,7 +120,8 @@ export default function NewQuizPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Quiz Settings</CardTitle>
+            <CardTitle>Schedule & Settings</CardTitle>
+            <CardDescription>Set a schedule so students can view and attend the test at the scheduled time. You can start it early if needed.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -149,20 +150,22 @@ export default function NewQuizPage() {
             {/* Scheduling */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Scheduled Start Time (optional)</Label>
+                <Label>Scheduled Start Time</Label>
                 <Input
                   type="datetime-local"
-                  value={form.scheduledStartTime}
+                  value={form.scheduledStartTime ? new Date(new Date(form.scheduledStartTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
                   onChange={(e) => setForm({ ...form, scheduledStartTime: e.target.value ? new Date(e.target.value).toISOString() : '' })}
                 />
+                <p className="text-xs text-muted-foreground">Quiz auto-starts at this time</p>
               </div>
               <div className="space-y-2">
-                <Label>Scheduled End Time (optional)</Label>
+                <Label>Scheduled End Time</Label>
                 <Input
                   type="datetime-local"
-                  value={form.scheduledEndTime}
+                  value={form.scheduledEndTime ? new Date(new Date(form.scheduledEndTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
                   onChange={(e) => setForm({ ...form, scheduledEndTime: e.target.value ? new Date(e.target.value).toISOString() : '' })}
                 />
+                <p className="text-xs text-muted-foreground">Optional end time for visibility</p>
               </div>
             </div>
             <div className="space-y-2">

@@ -60,6 +60,14 @@ export default function PlaySessionPage() {
   useEffect(() => { savedAnswersRef.current = savedAnswers; }, [savedAnswers]);
   useEffect(() => { participantIdRef.current = participantId; }, [participantId]);
 
+  // Initialize participantId from sessionStorage on mount
+  useEffect(() => {
+    const storedPid = sessionStorage.getItem('participantId');
+    if (storedPid) {
+      setParticipantId(storedPid);
+    }
+  }, []);
+
   // Auto-join: ensure the user is a participant
   useEffect(() => {
     (async () => {

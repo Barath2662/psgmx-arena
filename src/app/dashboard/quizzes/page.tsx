@@ -6,28 +6,43 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, BookOpen, Play, Trash2, Edit, MoreVertical } from 'lucide-react';
+import { Plus, Search, BookOpen, Play, Trash2, Edit, Clock, Square, BarChart3, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function QuizzesPage() {
   const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchQuizzes();
+    fetchData();
   }, []);
 
-  async function fetchQuizzes() {
+  async function fetchData() {
     try {
-      const res = await fetch('/api/quiz');
-      const data = await res.json();
-      setQuizzes(data.quizzes || []);
+      const [qRes, sRes] = await Promise.all([
+        fetch('/api/quiz'),
+        fetch('/api/session'),
+      ]);
+      const qData = await qRes.json();
+      const sData = await sRes.json();
+      setQuizzes(qData.quizzes || []);
+      setSessions(sData.sessions || []);
     } catch (error) {
       toast.error('Failed to load quizzes');
     } finally {
       setLoading(false);
     }
+  }
+
+  // Find the active (non-completed) session for a quiz
+  function getSessionForQuiz(quizId: string) {
+    return sessions.find((s: any) => s.quizId === quizId && s.state !== 'COMPLETED');
+  }
+
+  function getCompletedSession(quizId: string) {
+    return sessions.find((s: any) => s.quizId === quizId && s.state === 'COMPLETED');
   }
 
   async function deleteQuiz(id: string) {
@@ -48,36 +63,59 @@ export default function QuizzesPage() {
 
   async function publishQuiz(id: string) {
     try {
-      await fetch(`/api/quiz/${id}`, {
+      const res = await fetch(`/api/quiz/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'PUBLISHED' }),
       });
-      setQuizzes((prev) =>
-        prev.map((q) => (q.id === id ? { ...q, status: 'PUBLISHED' } : q))
-      );
-      toast.success('Quiz published!');
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || 'Failed to publish');
+        return;
+      }
+      toast.success('Quiz published! Session auto-created.');
+      fetchData();
     } catch {
       toast.error('Failed to publish quiz');
     }
   }
 
-  async function startSession(quizId: string) {
+  async function startQuizNow(sessionId: string) {
     try {
-      const res = await fetch('/api/session', {
-        method: 'POST',
+      const res = await fetch(`/api/session/${sessionId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quizId }),
+        body: JSON.stringify({ action: 'start' }),
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error);
+        toast.error(data.error || 'Failed to start');
         return;
       }
-      toast.success(`Session created! Code: ${data.session.joinCode}`);
-      window.location.href = `/session/${data.session.id}/host`;
+      toast.success('Quiz started!');
+      fetchData();
     } catch {
-      toast.error('Failed to start session');
+      toast.error('Failed to start quiz');
+    }
+  }
+
+  async function endQuizNow(sessionId: string) {
+    if (!confirm('End this quiz? All student answers will be saved.')) return;
+    try {
+      const res = await fetch(`/api/session/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'end' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to end');
+        return;
+      }
+      toast.success('Quiz ended!');
+      fetchData();
+    } catch {
+      toast.error('Failed to end quiz');
     }
   }
 
@@ -143,12 +181,27 @@ export default function QuizzesPage() {
                 <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
                   {quiz.description || 'No description'}
                 </p>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
+                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4 flex-wrap">
                   <span className="flex items-center gap-1">
                     <BookOpen className="h-3 w-3" /> {quiz.questions?.length ?? 0} questions
                   </span>
+                  {quiz.scheduledStartTime && (
+                    <span className="flex items-center gap-1 text-blue-500">
+                      <Calendar className="h-3 w-3" /> {new Date(quiz.scheduledStartTime).toLocaleString()}
+                    </span>
+                  )}
+                  {(() => {
+                    const session = getSessionForQuiz(quiz.id);
+                    if (session?.state === 'QUESTION_ACTIVE') {
+                      return <Badge variant="success" className="text-xs">Live</Badge>;
+                    }
+                    if (session?.state === 'WAITING') {
+                      return <Badge variant="warning" className="text-xs">Waiting</Badge>;
+                    }
+                    return null;
+                  })()}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Link href={`/dashboard/quizzes/${quiz.id}`} className="flex-1">
                     <Button variant="outline" size="sm" className="w-full">
                       <Edit className="mr-1 h-3 w-3" /> Edit
@@ -163,15 +216,41 @@ export default function QuizzesPage() {
                       Publish
                     </Button>
                   )}
-                  {quiz.status === 'PUBLISHED' && (
-                    <Button
-                      variant="arena"
-                      size="sm"
-                      onClick={() => startSession(quiz.id)}
-                    >
-                      <Play className="mr-1 h-3 w-3" /> Go Live
-                    </Button>
-                  )}
+                  {quiz.status === 'PUBLISHED' && (() => {
+                    const session = getSessionForQuiz(quiz.id);
+                    if (session?.state === 'WAITING') {
+                      return (
+                        <Button
+                          variant="arena"
+                          size="sm"
+                          onClick={() => startQuizNow(session.id)}
+                        >
+                          <Play className="mr-1 h-3 w-3" /> Start Now
+                        </Button>
+                      );
+                    } else if (session?.state === 'QUESTION_ACTIVE') {
+                      return (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => endQuizNow(session.id)}
+                        >
+                          <Square className="mr-1 h-3 w-3" /> End
+                        </Button>
+                      );
+                    }
+                    const completed = getCompletedSession(quiz.id);
+                    if (completed) {
+                      return (
+                        <Link href={`/dashboard/analytics/${completed.id}`}>
+                          <Button variant="outline" size="sm">
+                            <BarChart3 className="mr-1 h-3 w-3" /> Results
+                          </Button>
+                        </Link>
+                      );
+                    }
+                    return null;
+                  })()}
                   <Button
                     variant="ghost"
                     size="sm"

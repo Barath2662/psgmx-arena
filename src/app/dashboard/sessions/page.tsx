@@ -5,24 +5,51 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Users, Clock, Play, BarChart3, Copy, ExternalLink } from 'lucide-react';
+import { Users, Clock, Play, BarChart3, Copy, Square, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
+    fetchSessions();
+  }, []);
+
+  function fetchSessions() {
     fetch('/api/session')
       .then((r) => r.json())
       .then((data) => setSessions(data.sessions || []))
       .catch(() => toast.error('Failed to load sessions'))
       .finally(() => setLoading(false));
-  }, []);
+  }
 
   function copyCode(code: string) {
     navigator.clipboard.writeText(code);
     toast.success(`Copied: ${code}`);
+  }
+
+  async function sessionAction(sessionId: string, action: string) {
+    setActionLoading(sessionId);
+    try {
+      const res = await fetch(`/api/session/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Action failed');
+        return;
+      }
+      toast.success(action === 'start' ? 'Quiz started!' : action === 'end' ? 'Quiz ended!' : 'Done');
+      fetchSessions();
+    } catch {
+      toast.error('Action failed');
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   const stateColors: Record<string, 'success' | 'warning' | 'secondary' | 'default' | 'destructive'> = {
@@ -33,11 +60,17 @@ export default function SessionsPage() {
     COMPLETED: 'secondary',
   };
 
+  const stateLabels: Record<string, string> = {
+    WAITING: 'Scheduled',
+    QUESTION_ACTIVE: 'Live',
+    COMPLETED: 'Completed',
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Sessions</h1>
-        <p className="text-muted-foreground">Manage your live quiz sessions</p>
+        <p className="text-muted-foreground">Manage your quiz sessions</p>
       </div>
 
       {loading ? (
@@ -56,12 +89,12 @@ export default function SessionsPage() {
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <h3 className="font-semibold text-lg">{s.quiz?.title}</h3>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1">
                         <Users className="h-3 w-3" /> {s.participants?.length ?? 0} participants
                       </span>
                       <span className="flex items-center gap-1 font-mono text-base">
-                        Join: {s.joinCode}
+                        Code: {s.joinCode}
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyCode(s.joinCode)}>
                           <Copy className="h-3 w-3" />
                         </Button>
@@ -73,15 +106,45 @@ export default function SessionsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Badge variant={stateColors[s.state] || 'default'}>{s.state}</Badge>
-                    {s.state !== 'COMPLETED' ? (
-                      <Link href={`/session/${s.id}/host`}>
-                        <Button variant="arena" size="sm">
-                          <Play className="mr-1 h-3 w-3" /> Host
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Link href={`/dashboard/analytics?session=${s.id}`}>
+                    <Badge variant={stateColors[s.state] || 'default'}>
+                      {stateLabels[s.state] || s.state}
+                    </Badge>
+                    {s.state === 'WAITING' && (
+                      <Button
+                        variant="arena"
+                        size="sm"
+                        onClick={() => sessionAction(s.id, 'start')}
+                        disabled={actionLoading === s.id}
+                      >
+                        {actionLoading === s.id ? (
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        ) : (
+                          <Play className="mr-1 h-3 w-3" />
+                        )}
+                        Start Now
+                      </Button>
+                    )}
+                    {s.state === 'QUESTION_ACTIVE' && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          if (confirm('End this quiz? All student answers will be saved.')) {
+                            sessionAction(s.id, 'end');
+                          }
+                        }}
+                        disabled={actionLoading === s.id}
+                      >
+                        {actionLoading === s.id ? (
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        ) : (
+                          <Square className="mr-1 h-3 w-3" />
+                        )}
+                        End Quiz
+                      </Button>
+                    )}
+                    {s.state === 'COMPLETED' && (
+                      <Link href={`/dashboard/analytics/${s.id}`}>
                         <Button variant="outline" size="sm">
                           <BarChart3 className="mr-1 h-3 w-3" /> Analytics
                         </Button>
@@ -99,7 +162,7 @@ export default function SessionsPage() {
             <Play className="h-16 w-16 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No sessions yet</h3>
             <p className="text-muted-foreground mb-4">
-              Create a quiz and start a live session to see it here
+              Publish a quiz to auto-create a session
             </p>
             <Link href="/dashboard/quizzes">
               <Button variant="arena">Go to Quizzes</Button>

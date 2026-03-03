@@ -189,24 +189,33 @@ export default function QuizEditPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to publish');
       setQuiz((prev: any) => ({ ...prev, status: 'PUBLISHED' }));
-      toast.success('Quiz published!');
+      toast.success('Quiz published! Session auto-created.');
     } catch (error: any) {
       toast.error(error.message || 'Failed to publish');
     }
   }
 
-  async function startSession() {
+  async function startQuizNow() {
     try {
-      const res = await fetch('/api/session', {
-        method: 'POST',
+      // Find the active session for this quiz
+      const sRes = await fetch(`/api/session?quizId=${quizId}`);
+      const sData = await sRes.json();
+      const waitingSession = (sData.sessions || []).find((s: any) => s.state === 'WAITING');
+      if (!waitingSession) {
+        toast.error('No waiting session found. Quiz may have already started.');
+        return;
+      }
+      const res = await fetch(`/api/session/${waitingSession.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quizId }),
+        body: JSON.stringify({ action: 'start' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      router.push(`/session/${data.session.id}/host`);
+      toast.success('Quiz started!');
+      fetchQuiz();
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || 'Failed to start');
     }
   }
 
@@ -251,8 +260,8 @@ export default function QuizEditPage() {
             </Button>
           )}
           {quiz.status === 'PUBLISHED' && (
-            <Button variant="arena" onClick={startSession}>
-              <Play className="mr-2 h-4 w-4" /> Go Live
+            <Button variant="arena" onClick={startQuizNow}>
+              <Play className="mr-2 h-4 w-4" /> Start Now
             </Button>
           )}
         </div>

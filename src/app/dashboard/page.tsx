@@ -299,11 +299,11 @@ function InstructorDashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={s.state === 'COMPLETED' ? 'secondary' : 'success'}>
-                        {s.state}
+                        {s.state === 'WAITING' ? 'Scheduled' : s.state === 'QUESTION_ACTIVE' ? 'Live' : s.state}
                       </Badge>
-                      {s.state !== 'COMPLETED' && (
-                        <Link href={`/session/${s.id}/host`}>
-                          <Button size="sm" variant="arena">Host</Button>
+                      {s.state === 'COMPLETED' && (
+                        <Link href={`/dashboard/analytics/${s.id}`}>
+                          <Button size="sm" variant="outline">Results</Button>
                         </Link>
                       )}
                     </div>
@@ -366,6 +366,10 @@ function StudentDashboard({ userName }: { userName: string }) {
         setError(data.error || 'Failed to join');
         setJoining(null);
         return;
+      }
+      // Store participant info for the play page
+      if (data.participantId) {
+        sessionStorage.setItem('participantId', data.participantId);
       }
       router.push(`/play/${data.sessionId}`);
     } catch {
@@ -501,7 +505,7 @@ function StudentDashboard({ userName }: { userName: string }) {
                       </span>
                       {q.timePerQuestion && (
                         <span className="flex items-center gap-1">
-                          ⏱️ {Math.round(q.timePerQuestion / 60)} min
+                          ⏱️ {Math.round(q.timePerQuestion / 60)} min total
                         </span>
                       )}
                       {q.instructor?.name && (
