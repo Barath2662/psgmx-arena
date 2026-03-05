@@ -14,12 +14,23 @@ import {
   Clock,
   RefreshCw,
   Trash2,
+  Pencil,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -64,6 +75,40 @@ export default function ManageUsersPage() {
 
   // Active tab
   const [tab, setTab] = useState<'users' | 'resets'>('users');
+
+  // Edit user dialog
+  const [editingUser, setEditingUser] = useState<UserData | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', registerNumber: '' });
+  const [saving, setSaving] = useState(false);
+
+  // Sorting
+  type SortKey = 'name' | 'registerNumber' | 'role';
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  function SortIcon({ col }: { col: SortKey }) {
+    if (sortKey !== col) return <ArrowUpDown className="inline h-3 w-3 ml-1 text-muted-foreground" />;
+    return sortDir === 'asc'
+      ? <ChevronUp className="inline h-3 w-3 ml-1" />
+      : <ChevronDown className="inline h-3 w-3 ml-1" />;
+  }
+
+  const sortedUsers = [...users].sort((a, b) => {
+    const aVal = (a[sortKey] ?? '').toString().toLowerCase();
+    const bVal = (b[sortKey] ?? '').toString().toLowerCase();
+    if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
 
   useEffect(() => {
     if (user && user.role !== 'ADMIN') {
@@ -222,6 +267,44 @@ export default function ManageUsersPage() {
       fetchUsers();
     } catch {
       toast.error('Failed to delete user');
+    }
+  }
+
+  function openEditDialog(u: UserData) {
+    setEditingUser(u);
+    setEditForm({
+      name: u.name || '',
+      registerNumber: u.registerNumber || '',
+    });
+  }
+
+  async function handleEditUser() {
+    if (!editingUser) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: editingUser.id,
+          name: editForm.name || null,
+          registerNumber: editForm.registerNumber || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || 'Failed to update user');
+        return;
+      }
+
+      toast.success('User updated successfully');
+      setEditingUser(null);
+      fetchUsers();
+    } catch {
+      toast.error('Failed to update user');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -458,15 +541,30 @@ export default function ManageUsersPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b text-left">
-                      <th className="pb-3 font-medium">Name</th>
-                      <th className="pb-3 font-medium">Reg. No.</th>
+                      <th
+                        className="pb-3 font-medium cursor-pointer select-none hover:text-primary"
+                        onClick={() => toggleSort('name')}
+                      >
+                        Name <SortIcon col="name" />
+                      </th>
+                      <th
+                        className="pb-3 font-medium cursor-pointer select-none hover:text-primary"
+                        onClick={() => toggleSort('registerNumber')}
+                      >
+                        Reg. No. <SortIcon col="registerNumber" />
+                      </th>
                       <th className="pb-3 font-medium">Email</th>
-                      <th className="pb-3 font-medium">Role</th>
+                      <th
+                        className="pb-3 font-medium cursor-pointer select-none hover:text-primary"
+                        onClick={() => toggleSort('role')}
+                      >
+                        Role <SortIcon col="role" />
+                      </th>
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((u) => (
+                    {sortedUsers.map((u) => (
                       <tr key={u.id} className="border-b last:border-0">
                         <td className="py-3 font-medium">{u.name || '—'}</td>
                         <td className="py-3 text-sm font-mono text-muted-foreground">{u.registerNumber || '—'}</td>
@@ -486,7 +584,16 @@ export default function ManageUsersPage() {
                             </SelectContent>
                           </Select>
                         </td>
-                        <td className="py-3">
+                        <td className="py-3 flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
+                            onClick={() => openEditDialog(u)}
+                            title="Edit user"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -507,6 +614,46 @@ export default function ManageUsersPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input value={editingUser?.displayEmail || ''} disabled className="bg-muted" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editName">Name</Label>
+              <Input
+                id="editName"
+                value={editForm.name}
+                onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Full Name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editRegNo">Register Number</Label>
+              <Input
+                id="editRegNo"
+                value={editForm.registerNumber}
+                onChange={(e) => setEditForm((f) => ({ ...f, registerNumber: e.target.value.toUpperCase() }))}
+                placeholder="e.g. 25MX101"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
+            <Button variant="arena" onClick={handleEditUser} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

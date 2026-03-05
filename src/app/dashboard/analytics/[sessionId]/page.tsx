@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   User,
+  RotateCcw,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -29,6 +30,38 @@ export default function SessionAnalyticsPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  const [restartingUsers, setRestartingUsers] = useState<Set<string>>(new Set());
+
+  async function restartUser(participantId: string, name: string) {
+    if (!confirm(`Reset all answers and scores for "${name}"? They will be able to retake the test from the beginning.`)) return;
+    setRestartingUsers((prev) => new Set(prev).add(participantId));
+    try {
+      const res = await fetch(`/api/session/${sessionId}/restart-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to restart user');
+        return;
+      }
+      toast.success(`${name}'s test has been reset`);
+      // Refresh analytics data
+      fetch(`/api/analytics/session/${sessionId}`)
+        .then((r) => r.json())
+        .then((json) => setData(json.analytics || json))
+        .catch(() => {});
+    } catch {
+      toast.error('Failed to restart user');
+    } finally {
+      setRestartingUsers((prev) => {
+        const next = new Set(prev);
+        next.delete(participantId);
+        return next;
+      });
+    }
+  }
 
   useEffect(() => {
     fetch(`/api/analytics/session/${sessionId}`)
@@ -259,6 +292,7 @@ export default function SessionAnalyticsPage() {
                   <th className="p-2">Correct</th>
                   <th className="p-2">Wrong</th>
                   <th className="p-2">Accuracy</th>
+                  <th className="p-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -296,11 +330,28 @@ export default function SessionAnalyticsPage() {
                               <span>{accuracy}%</span>
                             </div>
                           </td>
+                          <td className="p-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); restartUser(p.id, p.name || 'Guest'); }}
+                              disabled={restartingUsers.has(p.id)}
+                              className="text-orange-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950"
+                              title="Reset this student's answers and score"
+                            >
+                              {restartingUsers.has(p.id) ? (
+                                <RotateCcw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3 w-3" />
+                              )}
+                              <span className="ml-1 hidden sm:inline">Restart</span>
+                            </Button>
+                          </td>
                         </tr>
                         {/* Expanded per-question details */}
                         {isExpanded && (
                           <tr key={`${p.id}-detail`}>
-                            <td colSpan={8} className="p-0">
+                            <td colSpan={9} className="p-0">
                               <div className="bg-muted/30 p-4 border-b">
                                 <p className="text-xs font-semibold mb-3 text-muted-foreground uppercase">
                                   Per-question breakdown for {p.name}

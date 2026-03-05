@@ -2,7 +2,86 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, Tables, generateId } from '@/lib/db';
 import { submitAnswerSchema } from '@/lib/validations';
 
-// ─── Grading logic ─────────────────────────────────────
+const PISTON_URLS = [
+  process.env.PISTON_API_URL,
+  'https://emkc.org/api/v2/piston',
+].filter(Boolean) as string[];
+
+const LANGUAGE_MAP: Record<string, { language: string; version: string }> = {
+  python:     { language: 'python',     version: '3.10.0'  },
+  javascript: { language: 'javascript', version: '18.15.0' },
+  typescript: { language: 'typescript', version: '5.0.3'   },
+  java:       { language: 'java',       version: '15.0.2'  },
+  c:          { language: 'c',          version: '10.2.0'  },
+  'c++':      { language: 'c++',        version: '10.2.0'  },
+  cpp:        { language: 'c++',        version: '10.2.0'  },
+  go:         { language: 'go',         version: '1.16.2'  },
+  rust:       { language: 'rust',       version: '1.68.2'  },
+  ruby:       { language: 'ruby',       version: '3.0.1'   },
+  php:        { language: 'php',        version: '8.2.3'   },
+};
+
+// ─── Auto-grade CODE questions via Piston ─────────────
+async function gradeCodeAnswer(
+  question: any,
+  answerData: any
+): Promise<{ isCorrect: boolean; score: number; testResults: any }> {
+  const { optionsData, points } = question;
+  const testCases: any[] = optionsData?.testCases || [];
+
+  if (!testCases.length) return { isCorrect: false, score: 0, testResults: null };
+
+  const code: string = answerData?.code || (typeof answerData === 'string' ? answerData : '');
+  const lang: string = (answerData?.language || optionsData?.language || 'python').toLowerCase();
+  if (!code.trim()) return { isCorrect: false, score: 0, testResults: null };
+
+  const runtime = LANGUAGE_MAP[lang];
+  if (!runtime) return { isCorrect: false, score: 0, testResults: null };
+
+  const details: any[] = [];
+
+  for (const tc of testCases) {
+    let passed = false;
+    let actual = '';
+
+    for (const pistonUrl of PISTON_URLS) {
+      try {
+        const res = await fetch(`${pistonUrl}/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            language: runtime.language,
+            version: runtime.version,
+            files: [{ name: 'main', content: code }],
+            stdin: tc.input || '',
+            run_timeout: 10000,
+            compile_timeout: 10000,
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          actual = (data.run?.stdout || '').trim();
+          passed = actual === String(tc.expectedOutput || '').trim();
+          break;
+        }
+      } catch { /* try next URL */ }
+    }
+
+    details.push({ passed, input: tc.input, expected: tc.expectedOutput, actual });
+  }
+
+  const passedCount = details.filter((d) => d.passed).length;
+  const allPassed = details.length > 0 && passedCount === details.length;
+
+  return {
+    isCorrect: allPassed,
+    score: allPassed ? points : 0,
+    testResults: { passed: passedCount, failed: details.length - passedCount, details },
+  };
+}
+
+// ─── Synchronous grading for all non-CODE types ────────
 function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; score: number } {
   const { type, correctAnswer, optionsData, points } = question;
 
@@ -11,7 +90,7 @@ function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; scor
     case 'TRUE_FALSE': {
       // answerData is the selected option ID
       const options = optionsData?.options || [];
-      const selectedOption = options.find((o: any) => o.id === answerData);
+      const selectedOption = options.find((o: any) => String(o.id) === String(answerData));
       // Primary: check isCorrect flag on the option
       let isCorrect = selectedOption?.isCorrect === true;
       // Fallback: check against correctAnswer field (comma-separated correct IDs)
@@ -28,7 +107,7 @@ function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; scor
       const correctIds = new Set(
         (optionsData?.options || [])
           .filter((o: any) => o.isCorrect)
-          .map((o: any) => o.id)
+          .map((o: any) => String(o.id))
       );
       const isCorrect =
         selectedIds.size === correctIds.size &&
@@ -40,7 +119,7 @@ function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; scor
       const answer = String(answerData).trim().toLowerCase();
       const correct = String(correctAnswer || '').trim().toLowerCase();
       const blanks = optionsData?.blanks || [];
-      let isCorrect = answer === correct;
+      let isCorrect = correct !== '' && answer === correct;
       if (!isCorrect && blanks.length > 0) {
         const accepted: string[] = blanks[0]?.acceptedAnswers || [];
         isCorrect = accepted.some((a: string) => String(a).trim().toLowerCase() === answer);
@@ -50,8 +129,8 @@ function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; scor
 
     case 'NUMERIC': {
       const answer = parseFloat(String(answerData));
-      const correct = parseFloat(String(correctAnswer || optionsData?.answer || '0'));
-      const tolerance = optionsData?.tolerance || 0;
+      const correct = parseFloat(String(correctAnswer || optionsData?.answer || ''));
+      const tolerance = Number(optionsData?.tolerance ?? 0);
       if (isNaN(answer) || isNaN(correct)) return { isCorrect: false, score: 0 };
       const isCorrect = Math.abs(answer - correct) <= tolerance;
       return { isCorrect, score: isCorrect ? points : 0 };
@@ -60,12 +139,24 @@ function gradeAnswer(question: any, answerData: any): { isCorrect: boolean; scor
     case 'SHORT_ANSWER': {
       const answer = String(answerData).trim().toLowerCase();
       const correct = String(correctAnswer || '').trim().toLowerCase();
-      const isCorrect = answer !== '' && answer === correct;
+      const isCorrect = correct !== '' && answer === correct;
+      return { isCorrect, score: isCorrect ? points : 0 };
+    }
+
+    case 'ORDERING': {
+      // answerData: array of IDs in student-chosen order
+      const studentOrder = (Array.isArray(answerData) ? answerData : String(answerData).split(','))
+        .map(String);
+      const correctOrder = (optionsData?.correctOrder || []).map(String);
+      const isCorrect =
+        correctOrder.length > 0 &&
+        studentOrder.length === correctOrder.length &&
+        studentOrder.every((id, i) => id === correctOrder[i]);
       return { isCorrect, score: isCorrect ? points : 0 };
     }
 
     default:
-      // CODE, LONG_ANSWER, etc. — needs manual grading
+      // LONG_ANSWER, DRAWING, FILE_UPLOAD, etc. — manual grading only
       return { isCorrect: false, score: 0 };
   }
 }
@@ -143,7 +234,20 @@ export async function POST(
     }
 
     // Grade the answer
-    const { isCorrect, score } = gradeAnswer(question, answerData);
+    let isCorrect: boolean;
+    let score: number;
+    let testResults: any = undefined;
+
+    if (question.type === 'CODE') {
+      const codeGrade = await gradeCodeAnswer(question, answerData);
+      isCorrect = codeGrade.isCorrect;
+      score = codeGrade.score;
+      testResults = codeGrade.testResults;
+    } else {
+      const grade = gradeAnswer(question, answerData);
+      isCorrect = grade.isCorrect;
+      score = grade.score;
+    }
 
     // Check if answer already exists (upsert)
     const { data: existingAnswer } = await db
@@ -157,15 +261,18 @@ export async function POST(
 
     if (existingAnswer) {
       // Update existing answer
+      const updatePayload: any = {
+        answerData,
+        timeTakenMs,
+        isCorrect,
+        score,
+        submittedAt: new Date().toISOString(),
+      };
+      if (testResults !== undefined) updatePayload.testResults = testResults;
+
       const { data: updated, error: updateError } = await db
         .from(Tables.student_answers)
-        .update({
-          answerData,
-          timeTakenMs,
-          isCorrect,
-          score,
-          submittedAt: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', existingAnswer.id)
         .select()
         .single();
@@ -174,18 +281,21 @@ export async function POST(
       answer = updated;
     } else {
       // Insert new answer
+      const insertPayload: any = {
+        id: generateId(),
+        participantId,
+        questionId,
+        userId: participant.userId || null,
+        answerData,
+        timeTakenMs,
+        isCorrect,
+        score,
+      };
+      if (testResults !== undefined) insertPayload.testResults = testResults;
+
       const { data: created, error: insertError } = await db
         .from(Tables.student_answers)
-        .insert({
-          id: generateId(),
-          participantId,
-          questionId,
-          userId: participant.userId || null,
-          answerData,
-          timeTakenMs,
-          isCorrect,
-          score,
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
@@ -196,7 +306,7 @@ export async function POST(
     // Recalculate participant scores
     await updateParticipantTotals(participantId);
 
-    return NextResponse.json({ answer, isCorrect, score }, { status: existingAnswer ? 200 : 201 });
+    return NextResponse.json({ answer, isCorrect, score, testResults }, { status: existingAnswer ? 200 : 201 });
   } catch (error) {
     console.error('Error saving answer:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

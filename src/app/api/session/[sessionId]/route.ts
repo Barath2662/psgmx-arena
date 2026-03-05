@@ -67,26 +67,6 @@ export async function GET(
       }
     }
 
-    // Auto-end session if overall time limit exceeded
-    if (quizSession.state === 'QUESTION_ACTIVE' && quizSession.startedAt) {
-      const timeLimit = quizSession.quiz?.timePerQuestion || 1800; // seconds
-      const elapsed = (Date.now() - new Date(quizSession.startedAt).getTime()) / 1000;
-      if (elapsed >= timeLimit) {
-        const { error: endError } = await db
-          .from(Tables.quiz_sessions)
-          .update({
-            state: 'COMPLETED',
-            endedAt: new Date().toISOString(),
-          })
-          .eq('id', params.sessionId);
-
-        if (!endError) {
-          quizSession.state = 'COMPLETED';
-          quizSession.endedAt = new Date().toISOString();
-        }
-      }
-    }
-
     // Strip correct answers for students during active session
     const user = await getAuthUser();
     const isManager = user ? canManageQuizzes(user.role) : false;
@@ -180,6 +160,31 @@ export async function PATCH(
         };
         break;
 
+      case 'reschedule': {
+        const { scheduledStartTime, scheduledEndTime } = body;
+        if (!scheduledStartTime) {
+          return NextResponse.json({ error: 'scheduledStartTime is required' }, { status: 400 });
+        }
+        // Update the quiz's scheduled times
+        await db
+          .from(Tables.quizzes)
+          .update({
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+          })
+          .eq('id', session.quiz?.id || (session as any).quizId);
+
+        // Reset session to WAITING
+        updateData = {
+          state: 'WAITING',
+          startedAt: null,
+          endedAt: null,
+          currentQuestionIndex: 0,
+          questionStartedAt: null,
+        };
+        break;
+      }
+
       default:
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
@@ -196,6 +201,56 @@ export async function PATCH(
     return NextResponse.json({ session: updated });
   } catch (error) {
     console.error('Error updating session:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// DELETE /api/session/[sessionId] - Instructor/Admin: permanently delete a session
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { sessionId: string } }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user || !canManageQuizzes(user.role)) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    // Verify session exists and belongs to this instructor (or user is admin)
+    const { data: session, error: fetchErr } = await db
+      .from(Tables.quiz_sessions)
+      .select('id, quiz:quizzes(instructorId)')
+      .eq('id', params.sessionId)
+      .single();
+
+    if (fetchErr || !session) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // All instructors & admins can manage any session
+
+    // Delete student_answers first (they reference session_participants via FK without cascade from session)
+    const { data: participants } = await db
+      .from(Tables.session_participants)
+      .select('id')
+      .eq('sessionId', params.sessionId);
+
+    if (participants && participants.length > 0) {
+      const participantIds = participants.map((p: any) => p.id);
+      await db.from(Tables.student_answers).delete().in('participantId', participantIds);
+    }
+
+    // Delete the session (cascades to session_participants, session_questions, student_powerups)
+    const { error: deleteErr } = await db
+      .from(Tables.quiz_sessions)
+      .delete()
+      .eq('id', params.sessionId);
+
+    if (deleteErr) throw deleteErr;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting session:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

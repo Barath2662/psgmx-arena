@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser, isAdminRole } from '@/lib/auth';
+import { getAuthUser, isAdminRole, canManageQuizzes } from '@/lib/auth';
 import { db, Tables, generateId } from '@/lib/db';
 import { createQuestionSchema } from '@/lib/validations';
 
@@ -50,7 +50,7 @@ export async function POST(
     if (!quiz) {
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
-    if (quiz.instructorId !== user.id && !isAdminRole(user.role)) {
+    if (quiz.instructorId !== user.id && !canManageQuizzes(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -113,7 +113,7 @@ export async function PUT(
       .eq('id', params.quizId)
       .single();
 
-    if (!quiz || (quiz.instructorId !== user.id && !isAdminRole(user.role))) {
+    if (!quiz || (quiz.instructorId !== user.id && !canManageQuizzes(user.role))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -158,7 +158,7 @@ export async function DELETE(
       .eq('id', params.quizId)
       .single();
 
-    if (!quiz || (quiz.instructorId !== user.id && !isAdminRole(user.role))) {
+    if (!quiz || (quiz.instructorId !== user.id && !canManageQuizzes(user.role))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

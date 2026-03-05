@@ -10,7 +10,6 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import {
-  Clock,
   CheckCircle,
   XCircle,
   Trophy,
@@ -33,7 +32,6 @@ export default function PlaySessionPage() {
   const [session, setSession] = useState<any>(null);
   const [state, setState] = useState('WAITING');
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [globalTimer, setGlobalTimer] = useState(0);
   const [answers, setAnswers] = useState<Record<number, any>>({});
   const [savedAnswers, setSavedAnswers] = useState<Record<number, boolean>>({});
   const [participantId, setParticipantId] = useState('');
@@ -47,8 +45,6 @@ export default function PlaySessionPage() {
 
   const startTimeRef = useRef<number>(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const autoSubmitRef = useRef(false);
   const sessionRef = useRef<any>(null);
   const answersRef = useRef<Record<number, any>>({});
   const savedAnswersRef = useRef<Record<number, boolean>>({});
@@ -91,57 +87,6 @@ export default function PlaySessionPage() {
     })();
   }, [sessionId]);
 
-  // Submit function that uses refs instead of state (for timer callback)
-  const doAutoSubmit = useCallback(async () => {
-    if (autoSubmitRef.current) return;
-    autoSubmitRef.current = true;
-
-    const sess = sessionRef.current;
-    const pid = participantIdRef.current;
-    const ans = answersRef.current;
-    const saved = savedAnswersRef.current;
-    const questions = sess?.quiz?.questions || [];
-
-    try {
-      // Save any unsaved answers
-      for (let i = 0; i < questions.length; i++) {
-        if (ans[i] !== undefined && !saved[i]) {
-          await fetch(`/api/session/${sessionId}/answer`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              participantId: pid,
-              questionId: questions[i].id,
-              answerData: ans[i],
-              timeTakenMs: startTimeRef.current ? Date.now() - startTimeRef.current : 0,
-            }),
-          });
-        }
-      }
-
-      // Fetch final results
-      const res = await fetch(`/api/session/${sessionId}`);
-      if (res.ok) {
-        const data = await res.json();
-        const participant = (data.session.participants || []).find((p: any) => p.id === pid);
-        if (participant) {
-          setScore(participant.totalScore || 0);
-          setTotalCorrect(participant.correctCount || 0);
-          setResults({
-            totalScore: participant.totalScore || 0,
-            correctCount: participant.correctCount || 0,
-            totalQuestions: questions.length,
-          });
-        }
-      }
-    } catch { /* silent */ }
-
-    setQuizSubmitted(true);
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (pollRef.current) clearInterval(pollRef.current);
-    toast('Time is up! Quiz auto-submitted.', { icon: '⏰' });
-  }, [sessionId]);
-
   // Fetch session data (for polling)
   const fetchSession = useCallback(async () => {
     try {
@@ -153,25 +98,9 @@ export default function PlaySessionPage() {
       setSession(s);
       setState(s.state);
 
-      // If session just started, set up overall timer
+      // Track when session started (for timeTakenMs on answers)
       if (s.state === 'QUESTION_ACTIVE' && s.startedAt && !startTimeRef.current) {
         startTimeRef.current = new Date(s.startedAt).getTime();
-        const totalSeconds = s.quiz?.timePerQuestion || 1800;
-        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-        const remaining = Math.max(0, totalSeconds - elapsed);
-        setGlobalTimer(remaining);
-
-        if (timerRef.current) clearInterval(timerRef.current);
-        timerRef.current = setInterval(() => {
-          setGlobalTimer((prev) => {
-            if (prev <= 1) {
-              if (timerRef.current) clearInterval(timerRef.current);
-              doAutoSubmit();
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
       }
 
       if (s.state === 'COMPLETED' && !quizSubmitted) {
@@ -191,12 +120,11 @@ export default function PlaySessionPage() {
           }
         }
         setQuizSubmitted(true);
-        if (timerRef.current) clearInterval(timerRef.current);
       }
     } catch { /* silent */ } finally {
       setLoading(false);
     }
-  }, [sessionId, quizSubmitted, doAutoSubmit]);
+  }, [sessionId, quizSubmitted]);
 
   // Initial fetch + polling every 2s
   useEffect(() => {
@@ -204,7 +132,6 @@ export default function PlaySessionPage() {
     pollRef.current = setInterval(fetchSession, 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
-      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [fetchSession]);
 
@@ -228,6 +155,21 @@ export default function PlaySessionPage() {
         });
         if (res.ok) {
           setSavedAnswers((prev) => ({ ...prev, [questionIndex]: true }));
+          // For CODE questions, show test case results
+          if (question.type === 'CODE') {
+            const data = await res.json();
+            if (data.testResults) {
+              const { passed, failed } = data.testResults;
+              const total = passed + failed;
+              if (failed === 0) {
+                toast.success(`All ${total} test case${total !== 1 ? 's' : ''} passed! ✅`);
+              } else {
+                toast.error(`${passed}/${total} test case${total !== 1 ? 's' : ''} passed`);
+              }
+            } else {
+              toast.success('Code submitted');
+            }
+          }
         }
       } catch { /* silent */ }
     },
@@ -275,7 +217,6 @@ export default function PlaySessionPage() {
       }
 
       setQuizSubmitted(true);
-      if (timerRef.current) clearInterval(timerRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
       toast.success('Quiz submitted successfully!');
     } catch {
@@ -284,13 +225,6 @@ export default function PlaySessionPage() {
       setSubmitting(false);
     }
   }, [submitting, quizSubmitted, session, answers, savedAnswers, saveAnswer, sessionId, participantId]);
-
-  // Format timer as MM:SS
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   if (loading || !session) {
     return (
@@ -315,11 +249,6 @@ export default function PlaySessionPage() {
             <span className="font-medium text-sm truncate">{session.quiz?.title}</span>
           </div>
           <div className="flex items-center gap-4">
-            {state === 'QUESTION_ACTIVE' && !quizSubmitted && globalTimer > 0 && (
-              <div className={`flex items-center gap-1 text-lg font-mono font-bold ${globalTimer <= 60 ? 'text-destructive animate-pulse' : 'text-primary'}`}>
-                <Clock className="h-4 w-4" /> {formatTime(globalTimer)}
-              </div>
-            )}
             <div className="text-right">
               <span className="text-xs text-muted-foreground">Answered</span>
               <p className="font-bold text-primary">{answeredCount}/{totalQuestions}</p>

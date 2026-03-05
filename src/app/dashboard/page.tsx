@@ -385,10 +385,14 @@ function StudentDashboard({ userName }: { userName: string }) {
   const completedQuizzes: any[] = [];
 
   quizzes.forEach((q) => {
-    // Check if user completed any session of this quiz
+    // Check if user participated in any session of this quiz
     const quizSessions = sessions.filter((s: any) => s.quizId === q.id);
     const completedSession = quizSessions.find(
       (s: any) => s.state === 'COMPLETED' && myParticipations.has(s.id)
+    );
+    // A session that was re-opened for retest but the student already took it
+    const participatedLiveSession = quizSessions.find(
+      (s: any) => s.state === 'QUESTION_ACTIVE' && myParticipations.has(s.id)
     );
     const liveSession = quizSessions.find(
       (s: any) => s.state === 'WAITING' || s.state === 'QUESTION_ACTIVE'
@@ -397,9 +401,9 @@ function StudentDashboard({ userName }: { userName: string }) {
       (s: any) => s.state === 'COMPLETED'
     );
 
-    if (completedSession) {
-      // Student participated in a completed session → completed tab
-      completedQuizzes.push({ ...q, _session: completedSession });
+    if (completedSession || participatedLiveSession) {
+      // Student participated → completed tab (even if session was re-opened for others)
+      completedQuizzes.push({ ...q, _session: completedSession || participatedLiveSession });
     } else if (allSessionsCompleted) {
       // All sessions ended but student didn't participate → completed (missed)
       completedQuizzes.push({ ...q, _session: quizSessions[0], _missed: true });

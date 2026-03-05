@@ -34,18 +34,8 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ sessions: [] });
       }
       query = query.in('quizId', quizIds);
-    } else if (!isAdminRole(user.role)) {
-      // Instructor: filter to sessions whose quiz belongs to this user
-      const { data: userQuizzes } = await db
-        .from(Tables.quizzes)
-        .select('id')
-        .eq('instructorId', user.id);
-      const quizIds = (userQuizzes || []).map((q: any) => q.id);
-      if (quizIds.length === 0) {
-        return NextResponse.json({ sessions: [] });
-      }
-      query = query.in('quizId', quizIds);
     }
+    // Instructors & Admins: see ALL sessions (no additional filter)
 
     if (quizId) query = query.eq('quizId', quizId);
     if (state) query = query.eq('state', state);
@@ -74,20 +64,6 @@ export async function GET(req: NextRequest) {
             .eq('id', s.id);
           updated.state = 'QUESTION_ACTIVE';
           updated.startedAt = now.toISOString();
-        }
-      }
-
-      // Auto-end: QUESTION_ACTIVE sessions whose time limit has elapsed
-      if (updated.state === 'QUESTION_ACTIVE' && updated.startedAt && updated.quiz) {
-        const timeLimit = (updated.quiz as any).timePerQuestion || 1800;
-        const elapsed = (now.getTime() - new Date(updated.startedAt).getTime()) / 1000;
-        if (elapsed >= timeLimit) {
-          await db
-            .from(Tables.quiz_sessions)
-            .update({ state: 'COMPLETED', endedAt: now.toISOString() })
-            .eq('id', s.id);
-          updated.state = 'COMPLETED';
-          updated.endedAt = now.toISOString();
         }
       }
 

@@ -24,12 +24,9 @@ export async function GET(req: NextRequest) {
       .range(offset, offset + limit - 1);
 
     // Students: only see PUBLISHED quizzes (from any instructor)
-    // Instructors: see their own quizzes
-    // Admins: see all quizzes
+    // Instructors & Admins: see ALL quizzes
     if (user.role === 'STUDENT') {
       query = query.eq('status', 'PUBLISHED');
-    } else if (!isAdminRole(user.role)) {
-      query = query.eq('instructorId', user.id);
     }
     if (status && user.role !== 'STUDENT') {
       query = query.eq('status', status);

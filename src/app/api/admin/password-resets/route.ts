@@ -65,9 +65,20 @@ export async function POST(req: NextRequest) {
       // Derive the new password from the register number (format: 00MX000)
       // If user has an email like 23mx105@psgtech.ac.in, the password becomes 23MX105
       const userEmail = resetRequest.user?.email || '';
+      const userRole = resetRequest.user?.role || 'STUDENT';
       const prefix = userEmail.split('@')[0] || '';
       const isRegNo = /^\d{2}mx\d{3}$/i.test(prefix);
-      const newPassword = isRegNo ? prefix.toUpperCase() : 'Psgmx123'; // fallback for non-reg-no accounts
+      // Role-specific default passwords
+      let newPassword: string;
+      if (isRegNo) {
+        newPassword = prefix.toUpperCase(); // e.g. 25MX105
+      } else if (userRole === 'ADMIN') {
+        newPassword = 'admin@123';
+      } else if (userRole === 'INSTRUCTOR') {
+        newPassword = 'instruct@123';
+      } else {
+        newPassword = 'student@123';
+      }
 
       const supabaseAdmin = createAdminClient();
       let supabaseId = resetRequest.user?.supabaseId;

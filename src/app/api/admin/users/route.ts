@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// PATCH /api/admin/users - Update user role
+// PATCH /api/admin/users - Update user (role, name, registerNumber)
 export async function PATCH(req: NextRequest) {
   try {
     const user = await getAuthUser();
@@ -113,20 +113,41 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    const { userId, role } = await req.json();
-    if (!userId || !role) {
-      return NextResponse.json({ error: 'userId and role are required' }, { status: 400 });
+    const body = await req.json();
+    const { userId, role, name, registerNumber } = body;
+    if (!userId) {
+      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
 
-    if (!['ADMIN', 'INSTRUCTOR', 'STUDENT'].includes(role)) {
-      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    // Build update payload with only provided fields
+    const updateData: Record<string, any> = {};
+
+    if (role !== undefined) {
+      if (!['ADMIN', 'INSTRUCTOR', 'STUDENT'].includes(role)) {
+        return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+      }
+      updateData.role = role;
     }
+
+    if (name !== undefined) {
+      updateData.name = name;
+    }
+
+    if (registerNumber !== undefined) {
+      updateData.registerNumber = registerNumber;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
+    updateData.updatedAt = new Date().toISOString();
 
     const { data: updated, error } = await db
       .from(Tables.users)
-      .update({ role })
+      .update(updateData)
       .eq('id', userId)
-      .select('id, name, email, role')
+      .select('id, name, email, role, registerNumber')
       .single();
 
     if (error) throw error;

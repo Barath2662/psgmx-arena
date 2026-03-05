@@ -1,8 +1,8 @@
 # PSGMX Arena
 
-**Live Quiz & Coding Platform** - Real-time, instructor-led quizzes and coding challenges with instant leaderboards, power-ups, and analytics.
+**Live Quiz & Coding Platform** - Real-time, instructor-led quizzes and coding challenges with instant leaderboards, power-ups, analytics, and flexible student management.
 
-> Any instructor can create a live quiz or coding session, students join instantly, everyone moves question-by-question in sync, results update in real time.
+> Instructors create quizzes, publish sessions, control when questions appear, and manage student attempts. Full editable quiz settings, student reset/retest, and comprehensive analytics.
 
 ---
 
@@ -28,9 +28,9 @@ The code sandbox is integrated at three levels:
 
 | Role | Capabilities |
 |------|-------------|
-| **Admin** | Full platform management, analytics, user role management, code playground |
-| **Instructor** | Create quizzes (with code questions), host live sessions, view session analytics, code playground |
-| **Student** | Join sessions via 6-digit code, play quizzes (including code), view leaderboard, code playground |
+| **Admin** | Full platform management, user role management, analytics, code playground, manage all sessions |
+| **Instructor** | Create/edit quizzes with full settings control, publish sessions, manage student attempts, reset/retest individual students, view session analytics, code playground |
+| **Student** | Participate in sessions (when enabled by instructor), play quizzes (including code), view leaderboard, code playground |
 
 ### Analytics & Insights
 - Per-session analytics with question-level breakdown
@@ -77,7 +77,7 @@ psgmx-arena/
 |   |   +-- page.tsx            # Landing page
 |   |   +-- layout.tsx          # Root layout (providers, toaster)
 |   |   +-- auth/               # Login, forgot/change password
-|   |   +-- join/               # 6-digit session code entry
+|   |   +-- join/               # Session access portal (instructor-managed)
 |   |   +-- play/[sessionId]/   # Student play view (with CodeSandbox)
 |   |   +-- session/.../host/   # Instructor host controls
 |   |   +-- dashboard/
@@ -162,9 +162,13 @@ npm run socket:dev   # Socket.IO on :3001
 docker compose up -d
 ```
 
-### Default Admin Password
+### Default Passwords
 
-New users created by admin get the default password: `Psgmx123`  
+Default passwords when creating or resetting accounts:
+- **Student**: register number (e.g. `25MX101`)
+- **Instructor**: `instruct@123`
+- **Admin**: `admin@123`
+
 Users must change their password on first login.
 
 ---
@@ -195,26 +199,31 @@ NEXT_PUBLIC_WS_URL="http://localhost:3001"
 
 ### Real-Time Quiz Flow
 
-```
-Instructor (Host View)
-        |
-   Socket.IO  <-->  Socket.IO Server (:3001)
-        |                    |
-        |             In-Memory Store
-        |            (state, leaderboard)
-        |                    |
-   Socket.IO  <-->       Broadcast
-        |
-Students (Play View with CodeSandbox)
-```
+**Setup:**
+1. Instructor creates a quiz with configurable settings (time limit, max attempts, shuffle questions/options, leaderboard, power-ups, passing score, schedule, syllabus)
+2. Instructor publishes the quiz → auto-creates a session
+3. Instructor edits quiz settings anytime (title, description, timing, rules, toggles)
+4. Instructor adds and manages questions (supports 18 question types including CODE)
 
-1. Instructor creates a quiz (with optional CODE questions) and starts a live session
-2. Students join via 6-digit code
-3. Instructor advances questions - all clients receive in sync with auto-timer
-4. For CODE questions, students code in Monaco Editor and execute via Piston API
-5. Answers are persisted to database and counted in real-time
-6. Leaderboard updates via in-memory sorted sets
-7. Session ends - full analytics available with Excel export
+**Execution:**
+5. Instructor starts the session (moves to QUESTION_ACTIVE state)
+6. Students participate in the session (can be added via admin user creation)
+7. Instructor controls question progression via Socket.IO (real-time sync)
+8. For CODE questions: Monaco Editor + Piston API execution engine
+9. Answers persisted to database, real-time leaderboard via in-memory store
+10. Instructor ends session → COMPLETED state
+
+**Post-Session Management:**
+11. Instructor views analytics with per-student breakdown, question statistics, Excel export
+12. Instructor can:
+    - **Delete Session**: Remove entire session and all data
+    - **Reset Students**: Clear selected students' answers and scores
+    - **Enable Retest**: Allow selected students to retake the quiz
+
+**Architecture:**
+- Instructor View ↔ Socket.IO Server (port 3001) ↔ Student Play Views
+- Real-time state & leaderboard via in-memory store with sorted sets
+- All answers immediately persisted to PostgreSQL
 
 ### Scoring Formula
 
@@ -248,8 +257,10 @@ streakMultiplier = 1.0, 1.1, 1.2, 1.3, 1.5 (consecutive corrects)
 | GET | `/api/session` | List sessions |
 | POST | `/api/session` | Create session |
 | GET | `/api/session/:id` | Get session details |
-| POST | `/api/session/join` | Join via code |
+| PATCH | `/api/session/:id` | Control session (start, next, lock, results, end) |
+| DELETE | `/api/session/:id` | Delete session permanently |
 | POST | `/api/session/:id/answer` | Persist student answer |
+| POST | `/api/session/:id/restart-user` | Reset student answers for retest (accepts participantId or userId) |
 
 ### Code Execution
 | Method | Endpoint | Description |

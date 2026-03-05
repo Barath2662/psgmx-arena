@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser, isAdminRole } from '@/lib/auth';
+import { getAuthUser, isAdminRole, canManageQuizzes } from '@/lib/auth';
 import { db, Tables, generateId } from '@/lib/db';
 import { updateQuizSchema } from '@/lib/validations';
 import { generateJoinCode } from '@/lib/utils';
@@ -31,7 +31,7 @@ export async function GET(
       quiz.questions.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
     }
 
-    if (!isAdminRole(user.role) && quiz.instructorId !== user.id) {
+    if (!canManageQuizzes(user.role) && quiz.instructorId !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -63,7 +63,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
 
-    if (quiz.instructorId !== user.id && !isAdminRole(user.role)) {
+    if (quiz.instructorId !== user.id && !canManageQuizzes(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -98,6 +98,23 @@ export async function PATCH(
       .single();
 
     if (error) throw error;
+
+    // When scheduledStartTime changes, reset non-COMPLETED sessions so they
+    // auto-start fresh at the new scheduled time (prevents stale startedAt
+    // from triggering immediate auto-end).
+    if (scheduledStartTime !== undefined) {
+      await db
+        .from(Tables.quiz_sessions)
+        .update({
+          state: 'WAITING',
+          startedAt: null,
+          endedAt: null,
+          currentQuestionIndex: 0,
+          questionStartedAt: null,
+        })
+        .eq('quizId', params.quizId)
+        .neq('state', 'COMPLETED');
+    }
 
     // Auto-create session when quiz is published (schedule-based flow)
     if (validation.data.status === 'PUBLISHED') {
@@ -184,7 +201,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
 
-    if (quiz.instructorId !== user.id && !isAdminRole(user.role)) {
+    if (quiz.instructorId !== user.id && !canManageQuizzes(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

@@ -62,9 +62,28 @@ export default function QuizEditPage() {
   const [quiz, setQuiz] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    title: '',
+    description: '',
+    mode: 'LIVE',
+    timeLimitMinutes: 30,
+    maxAttempts: 1,
+    shuffleQuestions: false,
+    shuffleOptions: false,
+    showResults: true,
+    enableCodeQuestions: false,
+    enableLeaderboard: true,
+    enablePowerUps: false,
+    passingScore: 50,
+    scheduledStartTime: '',
+    scheduledEndTime: '',
+    syllabus: '',
+  });
 
-  // Question form
+  const [quizSession, setQuizSession] = useState<any>(null);
+  const [loadingSession, setLoadingSession] = useState(false);
   const [newQuestion, setNewQuestion] = useState<{
     type: string;
     title: string;
@@ -95,7 +114,19 @@ export default function QuizEditPage() {
 
   useEffect(() => {
     fetchQuiz();
+    fetchQuizSession();
   }, [quizId]);
+
+  async function fetchQuizSession() {
+    try {
+      const res = await fetch(`/api/session?quizId=${quizId}`);
+      const data = await res.json();
+      const sessions: any[] = data.sessions || [];
+      // Prefer non-COMPLETED session; fall back to most recent
+      const active = sessions.find((s) => s.state !== 'COMPLETED') || sessions[0] || null;
+      setQuizSession(active);
+    } catch { /* silent */ }
+  }
 
   async function fetchQuiz() {
     try {
@@ -103,10 +134,62 @@ export default function QuizEditPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setQuiz(data.quiz);
+      setSettingsForm({
+        title: data.quiz.title || '',
+        description: data.quiz.description || '',
+        mode: data.quiz.mode || 'LIVE',
+        timeLimitMinutes: Math.round((data.quiz.timePerQuestion || 1800) / 60),
+        maxAttempts: data.quiz.maxAttempts || 1,
+        shuffleQuestions: data.quiz.shuffleQuestions || false,
+        shuffleOptions: data.quiz.shuffleOptions || false,
+        showResults: data.quiz.showResults ?? true,
+        enableCodeQuestions: data.quiz.enableCodeQuestions || false,
+        enableLeaderboard: data.quiz.enableLeaderboard ?? true,
+        enablePowerUps: data.quiz.enablePowerUps || false,
+        passingScore: data.quiz.passingScore ?? 50,
+        scheduledStartTime: data.quiz.scheduledStartTime || '',
+        scheduledEndTime: data.quiz.scheduledEndTime || '',
+        syllabus: data.quiz.syllabus || '',
+      });
     } catch (error: any) {
       toast.error(error.message || 'Failed to load quiz');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveSettings() {
+    setSavingSettings(true);
+    try {
+      const res = await fetch(`/api/quiz/${quizId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: settingsForm.title,
+          description: settingsForm.description || undefined,
+          mode: settingsForm.mode,
+          timePerQuestion: settingsForm.timeLimitMinutes * 60,
+          maxAttempts: settingsForm.maxAttempts,
+          shuffleQuestions: settingsForm.shuffleQuestions,
+          shuffleOptions: settingsForm.shuffleOptions,
+          showResults: settingsForm.showResults,
+          enableCodeQuestions: settingsForm.enableCodeQuestions,
+          enableLeaderboard: settingsForm.enableLeaderboard,
+          enablePowerUps: settingsForm.enablePowerUps,
+          passingScore: settingsForm.passingScore,
+          scheduledStartTime: settingsForm.scheduledStartTime || undefined,
+          scheduledEndTime: settingsForm.scheduledEndTime || undefined,
+          syllabus: settingsForm.syllabus || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save settings');
+      setQuiz((prev: any) => ({ ...prev, ...data.quiz }));
+      toast.success('Settings saved!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
     }
   }
 
@@ -197,14 +280,35 @@ export default function QuizEditPage() {
 
   async function startQuizNow() {
     try {
-      // Find the active session for this quiz
       const sRes = await fetch(`/api/session?quizId=${quizId}`);
       const sData = await sRes.json();
-      const waitingSession = (sData.sessions || []).find((s: any) => s.state === 'WAITING');
-      if (!waitingSession) {
-        toast.error('No waiting session found. Quiz may have already started.');
+      const sessions: any[] = sData.sessions || [];
+
+      // Already live — go to host page
+      const liveSession = sessions.find((s: any) => s.state === 'QUESTION_ACTIVE');
+      if (liveSession) {
+        router.push(`/session/${liveSession.id}/host`);
         return;
       }
+
+      let waitingSession = sessions.find((s: any) => s.state === 'WAITING');
+
+      // No active session at all — create one first
+      if (!waitingSession) {
+        const createRes = await fetch('/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quizId, allowLateJoin: true, guestMode: false }),
+        });
+        const createData = await createRes.json();
+        if (!createRes.ok) {
+          toast.error(createData.error || 'Failed to create session');
+          return;
+        }
+        waitingSession = createData.session;
+        toast.success('New session created.');
+      }
+
       const res = await fetch(`/api/session/${waitingSession.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -212,8 +316,8 @@ export default function QuizEditPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast.success('Quiz started!');
-      fetchQuiz();
+      toast.success('Quiz started! Redirecting to host controls...');
+      router.push(`/session/${waitingSession.id}/host`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to start');
     }
@@ -260,9 +364,26 @@ export default function QuizEditPage() {
             </Button>
           )}
           {quiz.status === 'PUBLISHED' && (
-            <Button variant="arena" onClick={startQuizNow}>
-              <Play className="mr-2 h-4 w-4" /> Start Now
-            </Button>
+            <>
+              {quizSession && (
+                <Badge
+                  variant={
+                    quizSession.state === 'QUESTION_ACTIVE' ? 'success'
+                    : quizSession.state === 'WAITING' ? 'warning'
+                    : 'secondary'
+                  }
+                  className="text-sm px-3 py-1"
+                >
+                  {quizSession.state === 'QUESTION_ACTIVE' ? 'Live'
+                    : quizSession.state === 'WAITING' ? 'Scheduled'
+                    : 'Completed'}
+                </Badge>
+              )}
+              <Button variant="arena" onClick={startQuizNow}>
+                <Play className="mr-2 h-4 w-4" />
+                {quizSession?.state === 'QUESTION_ACTIVE' ? 'Go to Host' : 'Start Now'}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -750,59 +871,149 @@ export default function QuizEditPage() {
         </TabsContent>
 
         {/* Settings Tab */}
-        <TabsContent value="settings">
+        <TabsContent value="settings" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Quiz Settings</CardTitle>
-              <CardDescription>Modify quiz behavior and rules</CardDescription>
+              <CardTitle>Basic Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="s-title">Quiz Title *</Label>
+                <Input
+                  id="s-title"
+                  value={settingsForm.title}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, title: e.target.value })}
+                  minLength={3}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="s-description">Description</Label>
+                <textarea
+                  id="s-description"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  placeholder="Brief description..."
+                  value={settingsForm.description}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, description: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Mode</Label>
+                <Select value={settingsForm.mode} onValueChange={(v) => setSettingsForm({ ...settingsForm, mode: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="LIVE">Live (Instructor-controlled)</SelectItem>
+                    <SelectItem value="SELF_PACED">Self-Paced</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Schedule &amp; Settings</CardTitle>
+              <CardDescription>Update timing, attempts, schedule, and feature toggles.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Mode</Label>
-                  <p className="text-sm font-medium">{quiz.mode}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Total Time Limit</Label>
-                  <p className="text-sm font-medium">{Math.round(quiz.timePerQuestion / 60)} min</p>
+                  <Label>Total Time Limit (minutes)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={settingsForm.timeLimitMinutes}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, timeLimitMinutes: parseInt(e.target.value) || 30 })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Max Attempts</Label>
-                  <p className="text-sm font-medium">{quiz.maxAttempts}</p>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={settingsForm.maxAttempts}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, maxAttempts: parseInt(e.target.value) })}
+                  />
                 </div>
-                <div className="space-y-2">
-                  <Label>Passing Score</Label>
-                  <p className="text-sm font-medium">{quiz.passingScore}%</p>
-                </div>
-                {quiz.scheduledStartTime && (
-                  <div className="space-y-2">
-                    <Label>Scheduled Start</Label>
-                    <p className="text-sm font-medium">{new Date(quiz.scheduledStartTime).toLocaleString()}</p>
-                  </div>
-                )}
-                {quiz.scheduledEndTime && (
-                  <div className="space-y-2">
-                    <Label>Scheduled End</Label>
-                    <p className="text-sm font-medium">{new Date(quiz.scheduledEndTime).toLocaleString()}</p>
-                  </div>
-                )}
               </div>
-              {quiz.syllabus && (
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Syllabus / Topics</Label>
-                  <p className="text-sm font-medium whitespace-pre-line bg-muted/50 rounded-lg p-3">{quiz.syllabus}</p>
+                  <Label>Scheduled Start Time</Label>
+                  <Input
+                    type="datetime-local"
+                    value={settingsForm.scheduledStartTime ? new Date(new Date(settingsForm.scheduledStartTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, scheduledStartTime: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                  />
+                  <p className="text-xs text-muted-foreground">Quiz auto-starts at this time</p>
                 </div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {quiz.shuffleQuestions && <Badge>Shuffle Questions</Badge>}
-                {quiz.shuffleOptions && <Badge>Shuffle Options</Badge>}
-                {quiz.showResults && <Badge>Show Results</Badge>}
-                {quiz.enableCodeQuestions && <Badge>Code Questions</Badge>}
-                {quiz.enableLeaderboard && <Badge>Leaderboard</Badge>}
-                {quiz.enablePowerUps && <Badge>Power-ups</Badge>}
+                <div className="space-y-2">
+                  <Label>Scheduled End Time</Label>
+                  <Input
+                    type="datetime-local"
+                    value={settingsForm.scheduledEndTime ? new Date(new Date(settingsForm.scheduledEndTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, scheduledEndTime: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                  />
+                  <p className="text-xs text-muted-foreground">Optional end time</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="s-syllabus">Syllabus / Topics Covered</Label>
+                <textarea
+                  id="s-syllabus"
+                  className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  placeholder="e.g., Unit 1: Arrays &amp; Strings"
+                  value={settingsForm.syllabus}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, syllabus: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">Students can view this once the test is scheduled.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Passing Score (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={settingsForm.passingScore}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, passingScore: parseInt(e.target.value) })}
+                />
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  { key: 'shuffleQuestions', label: 'Shuffle Questions' },
+                  { key: 'shuffleOptions', label: 'Shuffle Options' },
+                  { key: 'showResults', label: 'Show Results to Students' },
+                  { key: 'enableCodeQuestions', label: 'Enable Code Questions' },
+                  { key: 'enableLeaderboard', label: 'Enable Leaderboard' },
+                  { key: 'enablePowerUps', label: 'Enable Power-ups' },
+                ].map((setting) => (
+                  <label key={setting.key} className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(settingsForm as any)[setting.key]}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, [setting.key]: e.target.checked })}
+                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm">{setting.label}</span>
+                  </label>
+                ))}
               </div>
             </CardContent>
           </Card>
+
+          <div className="flex justify-end">
+            <Button variant="arena" onClick={saveSettings} disabled={savingSettings || !settingsForm.title}>
+              {savingSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Settings
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
