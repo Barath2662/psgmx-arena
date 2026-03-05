@@ -77,7 +77,7 @@ export async function PATCH(
       );
     }
 
-    const { scheduledStartTime, scheduledEndTime, ...quizData } = validation.data;
+    const { scheduledStartTime, scheduledEndTime, syllabus, ...quizData } = validation.data;
 
     const { data: updated, error } = await db
       .from(Tables.quizzes)
@@ -88,6 +88,9 @@ export async function PATCH(
         }),
         ...(scheduledEndTime !== undefined && {
           scheduledEndTime: scheduledEndTime || null,
+        }),
+        ...(syllabus !== undefined && {
+          syllabus: syllabus || null,
         }),
       })
       .eq('id', params.quizId)

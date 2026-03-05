@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { scheduledStartTime, scheduledEndTime, ...quizData } = validation.data;
+    const { scheduledStartTime, scheduledEndTime, syllabus, ...quizData } = validation.data;
 
     const { data: quiz, error } = await db
       .from(Tables.quizzes)
@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
         ...quizData,
         scheduledStartTime: scheduledStartTime || null,
         scheduledEndTime: scheduledEndTime || null,
+        syllabus: syllabus || null,
         instructorId: user.id,
         updatedAt: new Date().toISOString(),
       })

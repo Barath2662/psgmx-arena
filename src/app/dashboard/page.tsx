@@ -393,9 +393,16 @@ function StudentDashboard({ userName }: { userName: string }) {
     const liveSession = quizSessions.find(
       (s: any) => s.state === 'WAITING' || s.state === 'QUESTION_ACTIVE'
     );
+    const allSessionsCompleted = quizSessions.length > 0 && quizSessions.every(
+      (s: any) => s.state === 'COMPLETED'
+    );
 
     if (completedSession) {
+      // Student participated in a completed session → completed tab
       completedQuizzes.push({ ...q, _session: completedSession });
+    } else if (allSessionsCompleted) {
+      // All sessions ended but student didn't participate → completed (missed)
+      completedQuizzes.push({ ...q, _session: quizSessions[0], _missed: true });
     } else if (liveSession) {
       liveQuizzes.push({ ...q, _session: liveSession });
     } else if (q.scheduledStartTime && new Date(q.scheduledStartTime) > now) {
@@ -498,6 +505,12 @@ function StudentDashboard({ userName }: { userName: string }) {
                     {q.description && (
                       <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{q.description}</p>
                     )}
+                    {q.syllabus && (
+                      <details className="mt-1">
+                        <summary className="text-xs text-blue-500 cursor-pointer hover:underline">View Syllabus</summary>
+                        <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line bg-muted/50 rounded-lg p-2">{q.syllabus}</p>
+                      </details>
+                    )}
                     <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1 flex-wrap">
                       <span className="flex items-center gap-1">
                         <BookOpen className="h-3 w-3" />
@@ -545,7 +558,9 @@ function StudentDashboard({ userName }: { userName: string }) {
                   )}
                   {tab === 'completed' && q._session && (
                     <div className="text-right">
-                      {(() => {
+                      {q._missed ? (
+                        <Badge variant="destructive">Missed</Badge>
+                      ) : (() => {
                         const part = q._session.participants?.find(
                           (p: any) => p.userId === user?.id
                         );

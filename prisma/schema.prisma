@@ -121,6 +121,9 @@ model Quiz {
   scheduledStartTime DateTime?
   scheduledEndTime   DateTime?
 
+  // Syllabus / topics covered (visible to students once scheduled)
+  syllabus           String?    @db.Text
+
   instructorId  String
   instructor    User       @relation("InstructorQuizzes", fields: [instructorId], references: [id])
 

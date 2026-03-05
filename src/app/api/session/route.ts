@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     let query = db
       .from(Tables.quiz_sessions)
-      .select('*, quiz:quizzes(id, title, mode), participants:session_participants(id)')
+      .select('*, quiz:quizzes(id, title, mode, timePerQuestion, scheduledStartTime, scheduledEndTime, syllabus), participants:session_participants(id, userId)')
       .order('createdAt', { ascending: false })
       .limit(50);
 
@@ -53,7 +53,48 @@ export async function GET(req: NextRequest) {
     const { data: sessions, error } = await query;
     if (error) throw error;
 
-    return NextResponse.json({ sessions: sessions || [] });
+    // Auto-fix stale session states: auto-start scheduled sessions, auto-end expired ones
+    const now = new Date();
+    const updatedSessions = [];
+    for (const s of sessions || []) {
+      let updated = { ...s };
+
+      // Auto-start: WAITING sessions whose scheduledStartTime has passed
+      if (updated.state === 'WAITING' && updated.quiz) {
+        const scheduledStart = (updated.quiz as any).scheduledStartTime;
+        if (scheduledStart && now >= new Date(scheduledStart)) {
+          await db
+            .from(Tables.quiz_sessions)
+            .update({
+              state: 'QUESTION_ACTIVE',
+              currentQuestionIndex: 0,
+              startedAt: now.toISOString(),
+              questionStartedAt: now.toISOString(),
+            })
+            .eq('id', s.id);
+          updated.state = 'QUESTION_ACTIVE';
+          updated.startedAt = now.toISOString();
+        }
+      }
+
+      // Auto-end: QUESTION_ACTIVE sessions whose time limit has elapsed
+      if (updated.state === 'QUESTION_ACTIVE' && updated.startedAt && updated.quiz) {
+        const timeLimit = (updated.quiz as any).timePerQuestion || 1800;
+        const elapsed = (now.getTime() - new Date(updated.startedAt).getTime()) / 1000;
+        if (elapsed >= timeLimit) {
+          await db
+            .from(Tables.quiz_sessions)
+            .update({ state: 'COMPLETED', endedAt: now.toISOString() })
+            .eq('id', s.id);
+          updated.state = 'COMPLETED';
+          updated.endedAt = now.toISOString();
+        }
+      }
+
+      updatedSessions.push(updated);
+    }
+
+    return NextResponse.json({ sessions: updatedSessions });
   } catch (error) {
     console.error('Error fetching sessions:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

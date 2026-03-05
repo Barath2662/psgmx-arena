@@ -175,6 +175,21 @@ export default function PlaySessionPage() {
       }
 
       if (s.state === 'COMPLETED' && !quizSubmitted) {
+        // Try to get the participant's results even if they didn't explicitly submit
+        if (participantIdRef.current) {
+          const participant = (s.participants || []).find(
+            (p: any) => p.id === participantIdRef.current
+          );
+          if (participant && (participant.totalScore > 0 || participant.correctCount > 0)) {
+            setScore(participant.totalScore || 0);
+            setTotalCorrect(participant.correctCount || 0);
+            setResults({
+              totalScore: participant.totalScore || 0,
+              correctCount: participant.correctCount || 0,
+              totalQuestions: (s.quiz?.questions || []).length,
+            });
+          }
+        }
         setQuizSubmitted(true);
         if (timerRef.current) clearInterval(timerRef.current);
       }
@@ -460,7 +475,11 @@ export default function PlaySessionPage() {
             <div className="text-center">
               <Trophy className="h-20 w-20 text-yellow-500 mx-auto mb-4 animate-score-pop" />
               <h2 className="text-3xl font-bold">Quiz Complete!</h2>
-              <p className="text-xl text-muted-foreground mt-2">Thank you for participating!</p>
+              {(!results && Object.keys(answers).length === 0) ? (
+                <p className="text-xl text-muted-foreground mt-2">This quiz has already ended. You did not submit any answers.</p>
+              ) : (
+                <p className="text-xl text-muted-foreground mt-2">Thank you for participating!</p>
+              )}
             </div>
 
             {results && (

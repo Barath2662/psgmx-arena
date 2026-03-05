@@ -23,6 +23,7 @@ export const createQuizSchema = z.object({
   passingScore: z.number().min(0).max(100).default(50),
   scheduledStartTime: z.string().datetime().optional(),
   scheduledEndTime: z.string().datetime().optional(),
+  syllabus: z.string().max(5000).optional(),
 });
 
 export const updateQuizSchema = createQuizSchema

@@ -29,6 +29,7 @@ export default function NewQuizPage() {
     passingScore: 50,
     scheduledStartTime: '',
     scheduledEndTime: '',
+    syllabus: '',
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,6 +45,7 @@ export default function NewQuizPage() {
           timePerQuestion: form.timeLimitMinutes * 60, // convert minutes to seconds
           scheduledStartTime: form.scheduledStartTime || undefined,
           scheduledEndTime: form.scheduledEndTime || undefined,
+          syllabus: form.syllabus || undefined,
         }),
       });
 
@@ -167,6 +169,19 @@ export default function NewQuizPage() {
                 />
                 <p className="text-xs text-muted-foreground">Optional end time for visibility</p>
               </div>
+            </div>
+
+            {/* Syllabus */}
+            <div className="space-y-2">
+              <Label htmlFor="syllabus">Syllabus / Topics Covered</Label>
+              <textarea
+                id="syllabus"
+                className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                placeholder="e.g., Unit 1: Arrays & Strings&#10;Unit 2: Linked Lists&#10;Unit 3: Trees & Graphs"
+                value={form.syllabus}
+                onChange={(e) => setForm({ ...form, syllabus: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">Students can view this once the test is scheduled. Use line breaks to list topics.</p>
             </div>
             <div className="space-y-2">
               <Label>Passing Score (%)</Label>

@@ -787,6 +787,12 @@ export default function QuizEditPage() {
                   </div>
                 )}
               </div>
+              {quiz.syllabus && (
+                <div className="space-y-2">
+                  <Label>Syllabus / Topics</Label>
+                  <p className="text-sm font-medium whitespace-pre-line bg-muted/50 rounded-lg p-3">{quiz.syllabus}</p>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 {quiz.shuffleQuestions && <Badge>Shuffle Questions</Badge>}
                 {quiz.shuffleOptions && <Badge>Shuffle Options</Badge>}
